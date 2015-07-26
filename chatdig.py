@@ -19,19 +19,10 @@ import requests
 
 __version__ = '1.0'
 
-# @m13253 IRC log 开放：https://cirno.xyz/~dant/irclog/
-
-# lru cache
 # (昨日)
 # 今日焦点: xx,yy,zz (12345,45678)
 # (今日标签: #xx,#yy)
 # (今日语录: ......)
-
-# /yesterday
-# /today
-# /kw <keyword>
-# /m <id>
-# /s <keyword>
 
 #jieba.re_eng = re.compile('[a-zA-Z0-9_]', re.U)
 
@@ -65,7 +56,7 @@ conn.execute('CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY, val INT
 # conn.execute('CREATE TABLE IF NOT EXISTS words (word TEXT PRIMARY KEY, count INTEGER)')
 
 MSG_Q = queue.Queue()
-SAY_Q = queue.Queue(maxsize=5)
+SAY_Q = queue.Queue(maxsize=10)
 
 class LRUCache:
 
@@ -118,7 +109,6 @@ def getsaying():
         SAY_P.stdin.flush()
         say = SAY_P.stdout.readline().strip().decode('utf-8')
         SAY_Q.put(say)
-        time.sleep(.2)
 
 ### DB import
 
@@ -370,6 +360,13 @@ def cmd_context(expr, chatid, replyid):
     typing(chatid)
     forwardmulti(range(mid - limit, mid + limit + 1), chatid, replyid)
 
+def ellipsisresult(s, find, maxctx=50):
+    lnid = s.lower().index(find.lower())
+    r = s[max(0, lnid - maxctx):min(len(s), lnid + maxctx)].strip()
+    if len(r) < len(s):
+        r = '… %s …' % r
+    return r
+
 def cmd_search(expr, chatid, replyid):
     '''/search <keyword> [<number>=5] Search the group log for recent messages. max=20'''
     expr = expr.split(' ')
@@ -385,8 +382,8 @@ def cmd_search(expr, chatid, replyid):
     typing(chatid)
     result = []
     for uid, fr, text, date in conn.execute("SELECT id, src, text, date FROM messages WHERE text LIKE ? ESCAPE '^' ORDER BY date DESC LIMIT ?", ('%' + keyword.replace('%', '^%').replace('_', '^_').replace('^', '^^') + '%', limit)).fetchall():
-        result.append('[%d|%s] %s: %s' % (uid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), db_getuser(fr)[0], text))
-    sendmsg('\n'.join(result) or 'Search failed.', chatid, replyid)
+        result.append('[%d|%s] %s: %s' % (uid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), db_getuser(fr)[0], ellipsisresult(text, keyword)))
+    sendmsg('\n'.join(result) or 'Found nothing.', chatid, replyid)
 
 def cmd_user(expr, chatid, replyid):
     '''/user <@username> [<number>=5] Search the group log for user's messages. max=20'''
@@ -403,14 +400,14 @@ def cmd_user(expr, chatid, replyid):
         sendmsg('Syntax error. Usage: ' + cmd_search.__doc__, chatid, replyid)
         return
     typing(chatid)
-    uid = conn.execute('SELECT id FROM users WHERE username = ?', (username[1:],)).fetchone()
+    uid = conn.execute('SELECT id FROM users WHERE username LIKE ?', (username[1:],)).fetchone()
     if not uid:
         sendmsg('User not found.', chatid, replyid)
     uid = uid[0]
     result = []
     for uid, text, date in conn.execute("SELECT id, text, date FROM messages WHERE src = ? ORDER BY date DESC LIMIT ?", (uid, limit)):
-        result.append('[%d|%s]: %s' % (uid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), text))
-    sendmsg('\n'.join(result) or 'Search failed.', chatid, replyid)
+        result.append('[%d|%s] %s' % (uid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), text))
+    sendmsg('\n'.join(result) or 'Found nothing.', chatid, replyid)
 
 def cmd_today(expr, chatid, replyid):
     sendmsg('Not implemented.', chatid, replyid)
