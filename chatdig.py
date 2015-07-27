@@ -57,7 +57,7 @@ conn.execute('CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY, val INT
 
 MSG_Q = queue.Queue()
 SAY_Q = queue.Queue(maxsize=50)
-FILLING = True
+SAY_LCK = threading.Lock()
 
 class LRUCache:
 
@@ -104,16 +104,24 @@ def getupdates():
         time.sleep(.1)
 
 def getsaying():
-    global SAY_P, SAY_Q, FILLING
-    while FILLING:
+    global SAY_P, SAY_Q
+    while 1:
         say = getsayingbytext()
         SAY_Q.put(say)
 
 def getsayingbytext(text=''):
     global SAY_P
-    SAY_P.stdin.write(text.strip().encode('utf-8') + b'\n')
-    SAY_P.stdin.flush()
-    return SAY_P.stdout.readline().strip().decode('utf-8')
+    with SAY_LCK:
+        try:
+            SAY_P.stdin.write(text.strip().encode('utf-8') + b'\n')
+            SAY_P.stdin.flush()
+            say = SAY_P.stdout.readline().strip().decode('utf-8')
+        except BrokenPipeError:
+            SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            SAY_P.stdin.write(text.strip().encode('utf-8') + b'\n')
+            SAY_P.stdin.flush()
+            say = SAY_P.stdout.readline().strip().decode('utf-8')
+    return say
 
 ### DB import
 
@@ -167,7 +175,7 @@ def async_send(method, **params):
     threading.Thread(target=bot_api_noerr, args=(method,), kwargs=params).run()
 
 def sendmsg(text, chat_id, reply_to_message_id=None):
-    logging.info('sendMessage: %s...' % text[:20])
+    logging.info('sendMessage: %s' % text[:20])
     async_send('sendMessage', chat_id=chat_id, text=text, reply_to_message_id=reply_to_message_id)
 
 def forward(message_id, chat_id, reply_to_message_id=None):
@@ -440,17 +448,14 @@ def cmd_quote(expr, chatid, replyid):
 def cmd_say(expr, chatid, replyid):
     '''/say Say something interesting.'''
     typing(chatid)
-    sendmsg(SAY_Q.get(), chatid, replyid)
+    sendmsg(SAY_Q.get() or '😓 ERROR_BRAIN_CONNECT_FAILED', chatid, replyid)
 
 def cmd_reply(expr, chatid, replyid):
     '''/reply [<question>] Reply to the conversation.'''
-    global FILLING
     typing(chatid)
-    FILLING = False
     text = (expr.strip() or ' '.join(t[0] for t in conn.execute("SELECT text FROM messages ORDER BY date DESC LIMIT 2").fetchall())).replace('\n', ' ')
     r = getsayingbytext(text)
-    FILLING = True
-    sendmsg(r, chatid, replyid)
+    sendmsg(r or '😓 ERROR_BRAIN_CONNECT_FAILED', chatid, replyid)
 
 def cmd_echo(expr, chatid, replyid):
     '''/echo Parrot back.'''
@@ -510,7 +515,8 @@ URL = 'https://api.telegram.org/bot%s/' % CFG['token']
 
 #importdb('telegram-history.db')
 
-SAY_P = subprocess.Popen(('python3', 'say.py', 'chat.binlm', 'chatdict.txt', 'context.pkl'), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+SAY_CMD = ('python3', 'say.py', 'chat.binlm', 'chatdict.txt', 'context.pkl')
+SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
 pollthr = threading.Thread(target=getupdates)
 pollthr.daemon = True

@@ -9,6 +9,7 @@ import pickle
 import random
 import itertools
 import functools
+import jieba.analyse
 
 RE_UCJK = re.compile(
     '([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0002A6D6]+)')
@@ -96,7 +97,9 @@ ctx = pickle.load(open(sys.argv[3], 'rb'))
 for ln in sys.stdin:
     ln = ln.strip()
     if ln:
-        ctxvoc = list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(ctx.__getitem__, filter(None, map(indexword, frozenset(jieba.cut(ln, HMM=False)))))))))) or ctx
+        if len(ln) > 80:
+            ln = ' '.join(jieba.analyse.textrank(ln))
+        ctxvoc = list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(ctx.__getitem__, filter(None, map(indexword, frozenset(jieba.cut(ln, HMM=False)))))))))) or voc
         generate_word(LM, order, ctxvoc)
     else:
         generate_word(LM, order, voc)
