@@ -56,7 +56,8 @@ conn.execute('CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY, val INT
 # conn.execute('CREATE TABLE IF NOT EXISTS words (word TEXT PRIMARY KEY, count INTEGER)')
 
 MSG_Q = queue.Queue()
-SAY_Q = queue.Queue(maxsize=10)
+SAY_Q = queue.Queue(maxsize=50)
+FILLING = True
 
 class LRUCache:
 
@@ -103,12 +104,16 @@ def getupdates():
         time.sleep(.1)
 
 def getsaying():
-    global SAY_P, SAY_Q
-    while 1:
-        SAY_P.stdin.write(b'1\n')
-        SAY_P.stdin.flush()
-        say = SAY_P.stdout.readline().strip().decode('utf-8')
+    global SAY_P, SAY_Q, FILLING
+    while FILLING:
+        say = getsayingbytext()
         SAY_Q.put(say)
+
+def getsayingbytext(text=''):
+    global SAY_P
+    SAY_P.stdin.write(text.strip().encode('utf-8') + b'\n')
+    SAY_P.stdin.flush()
+    return SAY_P.stdout.readline().strip().decode('utf-8')
 
 ### DB import
 
@@ -270,6 +275,10 @@ def command(text, chatid, replyid):
             sendmsg('Invalid command. Send /help for help.', chatid, replyid)
     elif all(n.isdigit() for n in t):
         COMMANDS['m'](' '.join(t), chatid, replyid)
+    elif chatid != -CFG['groupid']:
+        t = ' '.join(t)
+        logging.info('Reply: ' + t[:20])
+        COMMANDS['reply'](t, chatid, replyid)
 
 def command_noerr(text, chatid, replyid):
     try:
@@ -355,7 +364,7 @@ def cmd_context(expr, chatid, replyid):
         else:
             mid, limit = int(expr[0]), 2
     except Exception:
-        sendmsg('Syntax error. Usage: ' + cmd_search.__doc__, chatid, replyid)
+        sendmsg('Syntax error. Usage: ' + cmd_context.__doc__, chatid, replyid)
         return
     typing(chatid)
     forwardmulti(range(mid - limit, mid + limit + 1), chatid, replyid)
@@ -397,7 +406,7 @@ def cmd_user(expr, chatid, replyid):
         if not username.startswith('@'):
             raise ValueError
     except Exception:
-        sendmsg('Syntax error. Usage: ' + cmd_search.__doc__, chatid, replyid)
+        sendmsg('Syntax error. Usage: ' + cmd_user.__doc__, chatid, replyid)
         return
     typing(chatid)
     uid = conn.execute('SELECT id FROM users WHERE username LIKE ?', (username[1:],)).fetchone()
@@ -419,7 +428,7 @@ def cmd_stat(expr, chatid, replyid):
     sendmsg('Not implemented.', chatid, replyid)
 
 def cmd_quote(expr, chatid, replyid):
-    '''/quote Send a today's random message'''
+    '''/quote Send a today's random message.'''
     typing(chatid)
     sec = daystart()
     msg = conn.execute('SELECT id FROM messages WHERE date >= ? AND date < ? ORDER BY RANDOM() LIMIT 1', (sec, sec + 86400)).fetchone()
@@ -433,9 +442,21 @@ def cmd_say(expr, chatid, replyid):
     typing(chatid)
     sendmsg(SAY_Q.get(), chatid, replyid)
 
+def cmd_reply(expr, chatid, replyid):
+    '''/reply [<question>] Reply to the conversation.'''
+    global FILLING
+    typing(chatid)
+    FILLING = False
+    text = (expr.strip() or ' '.join(t[0] for t in conn.execute("SELECT text FROM messages ORDER BY date DESC LIMIT 2").fetchall())).replace('\n', ' ')
+    r = getsayingbytext(text)
+    FILLING = True
+    sendmsg(r, chatid, replyid)
+
 def cmd_echo(expr, chatid, replyid):
     '''/echo Parrot back.'''
-    if expr:
+    if 'ping' in expr.lower():
+        sendmsg('pong', chatid, replyid)
+    elif expr:
         sendmsg(expr, chatid, replyid)
 
 def cmd_hello(expr, chatid, replyid):
@@ -459,6 +480,8 @@ def cmd_help(expr, chatid, replyid):
     '''/help Show usage.'''
     if chatid != -CFG['groupid']:
         sendmsg('\n'.join(cmd.__doc__ for cmd in COMMANDS.values() if cmd.__doc__), chatid, replyid)
+    else:
+        sendmsg('Full help disabled in this group.', chatid, replyid)
 
 
 # should document usage in docstrings
@@ -472,6 +495,7 @@ COMMANDS = collections.OrderedDict((
 ('stat', cmd_stat),
 ('quote', cmd_quote),
 ('say', cmd_say),
+('reply', cmd_reply),
 ('echo', cmd_echo),
 ('hello', cmd_hello),
 ('start', cmd_start),
@@ -486,7 +510,7 @@ URL = 'https://api.telegram.org/bot%s/' % CFG['token']
 
 #importdb('telegram-history.db')
 
-SAY_P = subprocess.Popen(('python3', 'say.py', 'chat.binlm', 'chatdict.txt'), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+SAY_P = subprocess.Popen(('python3', 'say.py', 'chat.binlm', 'chatdict.txt', 'context.pkl'), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
 pollthr = threading.Thread(target=getupdates)
 pollthr.daemon = True
