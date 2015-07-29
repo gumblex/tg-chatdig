@@ -7,6 +7,7 @@ import sys
 import time
 import json
 import queue
+import random
 import logging
 import sqlite3
 import datetime
@@ -70,13 +71,13 @@ class LRUCache:
         self.cache[key] = value
         return value
 
-    def get(self, key):
+    def get(self, key, default=None):
         try:
             value = self.cache.pop(key)
             self.cache[key] = value
             return value
         except KeyError:
-            return None
+            return default
 
     def __setitem__(self, key, value):
         try:
@@ -176,7 +177,9 @@ def async_send(method, **params):
 
 def sendmsg(text, chat_id, reply_to_message_id=None):
     logging.info('sendMessage: %s' % text[:20])
-    async_send('sendMessage', chat_id=chat_id, text=text, reply_to_message_id=reply_to_message_id)
+    m = bot_api('sendMessage', chat_id=chat_id, text=text, reply_to_message_id=reply_to_message_id)
+    if chat_id == -CFG['groupid']:
+        logmsg(m)
 
 def forward(message_id, chat_id, reply_to_message_id=None):
     logging.info('forwardMessage: %r' % message_id)
@@ -211,7 +214,7 @@ def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
 
 def typing(chat_id):
     logging.info('sendChatAction: %r' % chat_id)
-    async_send('sendChatAction', chat_id=chat_id, action='typing')
+    bot_api('sendChatAction', chat_id=chat_id, action='typing')
 
 #def extract_tag(s):
     #words = []
@@ -281,8 +284,9 @@ def command(text, chatid, replyid):
             COMMANDS[cmd](' '.join(t[1:]), chatid, replyid)
         elif chatid != -CFG['groupid']:
             sendmsg('Invalid command. Send /help for help.', chatid, replyid)
-    elif all(n.isdigit() for n in t):
-        COMMANDS['m'](' '.join(t), chatid, replyid)
+    # 233333
+    #elif all(n.isdigit() for n in t):
+        #COMMANDS['m'](' '.join(t), chatid, replyid)
     elif chatid != -CFG['groupid']:
         t = ' '.join(t)
         logging.info('Reply: ' + t[:20])
@@ -303,6 +307,7 @@ def processmsg():
     uid = d['update_id']
     if 'message' in d:
         msg = d['message']
+        MSG_CACHE[msg['message_id']] = msg
         cls = classify(msg)
         logging.debug('Classified as: %s', cls)
         if cls == 0:
@@ -399,7 +404,7 @@ def cmd_search(expr, chatid, replyid):
     typing(chatid)
     result = []
     for uid, fr, text, date in conn.execute("SELECT id, src, text, date FROM messages WHERE text LIKE ? ESCAPE '^' ORDER BY date DESC LIMIT ?", ('%' + keyword.replace('%', '^%').replace('_', '^_').replace('^', '^^') + '%', limit)).fetchall():
-        result.append('[%d|%s] %s: %s' % (uid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), db_getuser(fr)[0], ellipsisresult(text, keyword)))
+        result.append('[%d|%s] %s: %s' % (uid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), db_getufname(fr), ellipsisresult(text, keyword)))
     sendmsg('\n'.join(result) or 'Found nothing.', chatid, replyid)
 
 def cmd_user(expr, chatid, replyid):
@@ -448,14 +453,18 @@ def cmd_quote(expr, chatid, replyid):
 def cmd_say(expr, chatid, replyid):
     '''/say Say something interesting.'''
     typing(chatid)
-    sendmsg(SAY_Q.get() or '😓 ERROR_BRAIN_CONNECT_FAILED', chatid, replyid)
+    sendmsg(SAY_Q.get() or 'ERROR_BRAIN_CONNECT_FAILED', chatid, replyid)
 
 def cmd_reply(expr, chatid, replyid):
     '''/reply [<question>] Reply to the conversation.'''
     typing(chatid)
-    text = (expr.strip() or ' '.join(t[0] for t in conn.execute("SELECT text FROM messages ORDER BY date DESC LIMIT 2").fetchall())).replace('\n', ' ')
+    origmsg = MSG_CACHE.get(replyid, {})
+    text = ''
+    if 'reply_to_message' in origmsg:
+        text = origmsg['reply_to_message'].get('text', '')
+    text = (expr.strip() or text or ' '.join(t[0] for t in conn.execute("SELECT text FROM messages ORDER BY date DESC LIMIT 2").fetchall())).replace('\n', ' ')
     r = getsayingbytext(text)
-    sendmsg(r or '😓 ERROR_BRAIN_CONNECT_FAILED', chatid, replyid)
+    sendmsg(r or 'ERROR_BRAIN_CONNECT_FAILED', chatid, replyid)
 
 def cmd_echo(expr, chatid, replyid):
     '''/echo Parrot back.'''
@@ -476,6 +485,12 @@ def cmd_hello(expr, chatid, replyid):
         sendmsg('该干嘛干嘛！', chatid, replyid)
     elif 18*3600 <= delta < 23*3600:
         sendmsg('晚上好！', chatid, replyid)
+
+def cmd_233(expr, chatid, replyid):
+    sendmsg(random.choice(('🌝', '🌚', '2333', SAY_Q.get())), chatid, replyid)
+
+def cmd_welcome(expr, chatid, replyid):
+    sendmsg(random.choice(('🌝', '🌚', '2333', SAY_Q.get())), chatid, replyid)
 
 def cmd_start(expr, chatid, replyid):
     if chatid != -CFG['groupid']:
@@ -503,6 +518,7 @@ COMMANDS = collections.OrderedDict((
 ('reply', cmd_reply),
 ('echo', cmd_echo),
 ('hello', cmd_hello),
+('233', cmd_233),
 ('start', cmd_start),
 ('help', cmd_help)
 ))
@@ -510,6 +526,7 @@ COMMANDS = collections.OrderedDict((
 OFFSET = conn.execute('SELECT val FROM config WHERE id = 0').fetchone()
 OFFSET = OFFSET[0] if OFFSET else 0
 USER_CACHE = LRUCache(20)
+MSG_CACHE = LRUCache(10)
 CFG = json.load(open('config.json'))
 URL = 'https://api.telegram.org/bot%s/' % CFG['token']
 
@@ -539,4 +556,4 @@ finally:
     conn.execute('REPLACE INTO config (id, val) VALUES (0, ?)', (OFFSET,))
     db.commit()
     SAY_P.terminate()
-
+    logging.info('Shut down cleanly.')
