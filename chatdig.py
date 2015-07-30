@@ -16,6 +16,7 @@ import functools
 import subprocess
 import collections
 
+import fparser
 import requests
 
 __version__ = '1.0'
@@ -274,32 +275,30 @@ def classify(msg):
         return -1
 
 def command(text, chatid, replyid):
-    t = text.strip().split(' ')
-    if not t:
-        return
-    if t[0][0] == '/':
-        cmd = t[0][1:].lower().replace('@' + CFG['botname'], '')
-        if cmd in COMMANDS:
-            logging.info('Command: ' + repr(t))
-            COMMANDS[cmd](' '.join(t[1:]), chatid, replyid)
-        elif chatid != -CFG['groupid']:
-            sendmsg('Invalid command. Send /help for help.', chatid, replyid)
-    # 233333
-    #elif all(n.isdigit() for n in t):
-        #COMMANDS['m'](' '.join(t), chatid, replyid)
-    elif chatid != -CFG['groupid']:
-        t = ' '.join(t)
-        logging.info('Reply: ' + t[:20])
-        COMMANDS['reply'](t, chatid, replyid)
-
-def command_noerr(text, chatid, replyid):
     try:
-        command(text, chatid, replyid)
+        t = text.strip().split(' ')
+        if not t:
+            return
+        if t[0][0] == '/':
+            cmd = t[0][1:].lower().replace('@' + CFG['botname'], '')
+            if cmd in COMMANDS:
+                logging.info('Command: ' + repr(t))
+                COMMANDS[cmd](' '.join(t[1:]), chatid, replyid)
+            elif chatid != -CFG['groupid']:
+                sendmsg('Invalid command. Send /help for help.', chatid, replyid)
+        # 233333
+        #elif all(n.isdigit() for n in t):
+            #COMMANDS['m'](' '.join(t), chatid, replyid)
+        elif chatid != -CFG['groupid']:
+            t = ' '.join(t)
+            logging.info('Reply: ' + t[:20])
+            COMMANDS['reply'](t, chatid, replyid)
     except Exception:
         logging.exception('Excute command failed.')
 
 def async_command(text, chatid, replyid):
-    threading.Thread(target=command_noerr, args=(text, chatid, replyid)).run()
+    thr = threading.Thread(target=command, args=(text, chatid, replyid))
+    thr.run()
 
 def processmsg():
     d = MSG_Q.get()
@@ -368,7 +367,7 @@ def cmd_getmsg(expr, chatid, replyid):
     forwardmulti(mids, chatid, replyid)
 
 def cmd_context(expr, chatid, replyid):
-    '''/context <message_id> [<number>=2] Show the specified message and its context. max=10'''
+    '''/context <message_id> [number=2] Show the specified message and its context. max=10'''
     expr = expr.split(' ')
     try:
         if len(expr) > 1:
@@ -390,7 +389,7 @@ def ellipsisresult(s, find, maxctx=50):
     return r
 
 def cmd_search(expr, chatid, replyid):
-    '''/search <keyword> [<number>=5] Search the group log for recent messages. max=20'''
+    '''/search <keyword> [number=5] Search the group log for recent messages. max=20'''
     expr = expr.split(' ')
     try:
         if len(expr) > 1:
@@ -399,8 +398,7 @@ def cmd_search(expr, chatid, replyid):
         else:
             keyword, limit = expr[0], 5
     except Exception:
-        sendmsg('Syntax error. Usage: ' + cmd_search.__doc__, chatid, replyid)
-        return
+        keyword, limit = expr, 5
     typing(chatid)
     result = []
     for uid, fr, text, date in conn.execute("SELECT id, src, text, date FROM messages WHERE text LIKE ? ESCAPE '^' ORDER BY date DESC LIMIT ?", ('%' + keyword.replace('%', '^%').replace('_', '^_').replace('^', '^^') + '%', limit)).fetchall():
@@ -408,7 +406,7 @@ def cmd_search(expr, chatid, replyid):
     sendmsg('\n'.join(result) or 'Found nothing.', chatid, replyid)
 
 def cmd_user(expr, chatid, replyid):
-    '''/user <@username> [<number>=5] Search the group log for user's messages. max=20'''
+    '''/user <@username> [number=5] Search the group log for user's messages. max=20'''
     expr = expr.split(' ')
     try:
         if len(expr) > 1:
@@ -438,7 +436,35 @@ def cmd_yesterday(expr, chatid, replyid):
     sendmsg('Not implemented.', chatid, replyid)
 
 def cmd_stat(expr, chatid, replyid):
-    sendmsg('Not implemented.', chatid, replyid)
+    '''/quote [minutes=1440] Show statistics.'''
+    try:
+        minutes = min(max(int(expr), 1), 1400013)
+    except Exception:
+        minutes = 1440
+    hr, m = divmod(minutes, 60)
+    timestr = (' %d 小时' % hr if hr else '') + (' %d 分钟' % m if m else '')
+    r = conn.execute('SELECT src FROM messages WHERE date > ?', (time.time() - minutes * 60,)).fetchall()
+    if not r:
+        sendmsg('在最近%s内无消息。' % timestr, chatid, replyid)
+    ctr = collections.Counter(i[0] for i in r)
+    mcomm = ctr.most_common(5)
+    count = len(r)
+    msg = ['在最近%s内有 %s 条消息，一分钟 %.2f 条。' % (timestr, count, count/minutes)]
+    msg.extend('%s: %s 条，%.2f%%' % (db_getufname(k), v, v/count*100) for k, v in mcomm)
+    msg.append('其他用户 %s 条，人均 %.2f 条' % (len(r) - sum(v for k, v in mcomm), count / len(ctr)))
+    sendmsg('\n'.join(msg), chatid, replyid)
+
+def cmd_calc(expr, chatid, replyid):
+    '''/calc <expr> Calculate <expr>.'''
+    if expr:
+        r = fx233es.Evaluate(expr)
+        if r is not None or fx233es.rformat:
+            res = fx233es.PrintResult()
+            if len(res) > 200:
+                res = res[:200] + '...'
+            sendmsg(res or 'Nothing', chatid, replyid)
+    else:
+        sendmsg('Syntax error. Usage: ' + cmd_calc.__doc__, chatid, replyid)
 
 def cmd_quote(expr, chatid, replyid):
     '''/quote Send a today's random message.'''
@@ -456,7 +482,7 @@ def cmd_say(expr, chatid, replyid):
     sendmsg(SAY_Q.get() or 'ERROR_BRAIN_CONNECT_FAILED', chatid, replyid)
 
 def cmd_reply(expr, chatid, replyid):
-    '''/reply [<question>] Reply to the conversation.'''
+    '''/reply [question] Reply to the conversation.'''
     typing(chatid)
     origmsg = MSG_CACHE.get(replyid, {})
     text = ''
@@ -472,6 +498,8 @@ def cmd_echo(expr, chatid, replyid):
         sendmsg('pong', chatid, replyid)
     elif expr:
         sendmsg(expr, chatid, replyid)
+    else:
+        sendmsg('ping', chatid, replyid)
 
 def cmd_hello(expr, chatid, replyid):
     delta = time.time() - daystart()
@@ -486,10 +514,16 @@ def cmd_hello(expr, chatid, replyid):
     elif 18*3600 <= delta < 23*3600:
         sendmsg('晚上好！', chatid, replyid)
 
-def cmd_233(expr, chatid, replyid):
-    sendmsg(random.choice(('🌝', '🌚', '2333', SAY_Q.get())), chatid, replyid)
-
 def cmd_welcome(expr, chatid, replyid):
+    if chatid != -CFG['groupid']:
+        return
+    r = conn.execute('SELECT media FROM messages WHERE date > ? AND media LIKE ? ORDER BY date DESC LIMIT 1', (time.time() - 3600, '%new_chat_participant%')).fetchone()
+    if r:
+        usr = json.loads(r[0])["new_chat_participant"]
+        USER_CACHE[usr["id"]] = (usr.get("username"), usr.get("first_name"), usr.get("last_name"))
+        sendmsg('欢迎 %s 加入本群！' % db_getufname(usr["id"]), chatid, replyid)
+
+def cmd_233(expr, chatid, replyid):
     sendmsg(random.choice(('🌝', '🌚', '2333', SAY_Q.get())), chatid, replyid)
 
 def cmd_start(expr, chatid, replyid):
@@ -513,11 +547,13 @@ COMMANDS = collections.OrderedDict((
 ('today', cmd_today),
 ('yesterday', cmd_yesterday),
 ('stat', cmd_stat),
+('calc', cmd_calc),
 ('quote', cmd_quote),
 ('say', cmd_say),
 ('reply', cmd_reply),
 ('echo', cmd_echo),
 ('hello', cmd_hello),
+('welcome', cmd_welcome),
 ('233', cmd_233),
 ('start', cmd_start),
 ('help', cmd_help)
@@ -534,6 +570,8 @@ URL = 'https://api.telegram.org/bot%s/' % CFG['token']
 
 SAY_CMD = ('python3', 'say.py', 'chat.binlm', 'chatdict.txt', 'context.pkl')
 SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+
+fx233es = fparser.Parser(numtype='decimal')
 
 pollthr = threading.Thread(target=getupdates)
 pollthr.daemon = True

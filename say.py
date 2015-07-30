@@ -5,6 +5,7 @@ import re
 import sys
 import kenlm
 import jieba
+import pangu
 import pickle
 import random
 import itertools
@@ -12,7 +13,9 @@ import functools
 import jieba.analyse
 
 RE_UCJK = re.compile(
-    '([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0002A6D6]+)')
+    '([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U0001F000-\U0001F8AD\U00020000-\U0002A6D6]+)')
+
+RE_EN = re.compile('[a-zA-Z0-9_]')
 
 punctstr = (
     '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~¢£¥·ˇˉ―‖‘’“”•′‵、。々'
@@ -66,11 +69,20 @@ def indexword(word):
     except ValueError:
         return None
 
+def joinword(words):
+    last = False
+    for w in words:
+        if last and RE_EN.match(w[0]):
+            yield ' '
+        yield w
+        if RE_EN.match(w[-1]):
+            last = True
+
 
 def generate_word(lm, order, ctxvoc):
     out = []
     idx, w = weighted_choice_king(10**lm.score(c, 1, 0) for c in ctxvoc)
-    sys.stdout.buffer.write(ctxvoc[idx].encode('utf-8'))
+    # sys.stdout.buffer.write(ctxvoc[idx].encode('utf-8'))
     out.append(ctxvoc[idx])
     while 1:
         bos = (len(out) <= order + 2)
@@ -78,11 +90,12 @@ def generate_word(lm, order, ctxvoc):
         idx, w = weighted_choice_king(
             10**lm.score(history + ctxvoc[k // 2], bos, k % 2) for k in range(len(ctxvoc) * 2))
         c = ctxvoc[idx // 2]
-        cprint(c)
+        # cprint(c)
         out.append(c)
         if idx % 2 or (len(out) > 3 and all(i == out[-1] for i in out[-3:])):
-            cprint('\n')
+            # cprint('\n')
             break
+    return pangu.spacing(''.join(joinword(out)))
 
 
 def getctxvoc(ln):
@@ -94,12 +107,15 @@ order = LM.order
 voc = loaddict(sys.argv[2])
 ctx = pickle.load(open(sys.argv[3], 'rb'))
 
+jieba.initialize()
+
 for ln in sys.stdin:
     ln = ln.strip()
     if ln:
         if len(ln) > 80:
             ln = ' '.join(jieba.analyse.textrank(ln))
         ctxvoc = list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(ctx.__getitem__, filter(None, map(indexword, frozenset(jieba.cut(ln, HMM=False)))))))))) or voc
-        generate_word(LM, order, ctxvoc)
+        print(generate_word(LM, order, ctxvoc))
     else:
-        generate_word(LM, order, voc)
+        print(generate_word(LM, order, voc))
+    sys.stdout.flush()

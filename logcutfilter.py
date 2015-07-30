@@ -28,7 +28,7 @@ ucjk = frozenset(itertools.chain(
     range(0x1F000, 0x2FFFF + 1)
 ))
 
-RE_BRACKET = re.compile(' ?[（(][^\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U0001F000-\U0002A6D6)）]*[)）]|"[^"]+"')
+RE_BRACKET = re.compile(' ?[（(][^\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U0001F000-\U0001F8AD\U00020000-\U0002A6D6)）]*[)）]|"[^"]+"')
 
 brackets = '()（）[]""‘’“”{}〈〉《》「」『』【】〔〕〖〗'
 
