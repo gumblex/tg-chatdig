@@ -483,8 +483,13 @@ def cmd_calc(expr, chatid, replyid):
 def cmd_py(expr, chatid, replyid):
     '''/py <expr> Evaluate Python 2 expression <expr>.'''
     if expr:
-        res = geteval(expr)
-        sendmsg(res or 'None or error occurred.', chatid, replyid)
+        if len(expr) > 500:
+            sendmsg('Expression too long.', chatid, replyid)
+        else:
+            res = geteval(expr)
+            if len(res) > 500:
+                res = res[:500] + '...'
+            sendmsg(res or 'None or error occurred.', chatid, replyid)
     else:
         sendmsg('Syntax error. Usage: ' + cmd_py.__doc__, chatid, replyid)
 
