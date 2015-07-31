@@ -27,11 +27,9 @@ def indexword(word):
         return None
 
 wd = collections.defaultdict(set)
-lastline = set()
 for ln in sys.stdin:
     ln = set(filter(None, (indexword(word) for word in jieba.cut(ln.strip()))))
-    for word in lastline:
+    for word in ln:
         wd[word] |= ln
-    lastline = ln
 
 pickle.dump(tuple(tuple(sorted(wd.get(k, ()))) for k in range(len(wl))), open('context.pkl', 'wb'))

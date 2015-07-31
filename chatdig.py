@@ -57,10 +57,6 @@ last_name TEXT
 conn.execute('CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY, val INTEGER)')
 # conn.execute('CREATE TABLE IF NOT EXISTS words (word TEXT PRIMARY KEY, count INTEGER)')
 
-MSG_Q = queue.Queue()
-SAY_Q = queue.Queue(maxsize=50)
-SAY_LCK = threading.Lock()
-
 class LRUCache:
 
     def __init__(self, maxlen):
@@ -124,6 +120,20 @@ def getsayingbytext(text=''):
             SAY_P.stdin.flush()
             say = SAY_P.stdout.readline().strip().decode('utf-8')
     return say
+
+def geteval(text=''):
+    global EVIL_P
+    with EVIL_LCK:
+        try:
+            EVIL_P.stdin.write(text.strip().encode('utf-8') + b'\n')
+            EVIL_P.stdin.flush()
+            result = EVIL_P.stdout.readline().strip().decode('utf-8')
+        except BrokenPipeError:
+            EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            EVIL_P.stdin.write(text.strip().encode('utf-8') + b'\n')
+            EVIL_P.stdin.flush()
+            result = EVIL_P.stdout.readline().strip().decode('utf-8')
+    return result
 
 ### DB import
 
@@ -205,13 +215,16 @@ def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
             failed = True
             break
     if failed:
-        text = []
-        for message_id in message_ids:
-            m = db_getmsg(message_id)
-            if m:
-                text.append('[%s] %s: %s' % (time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(m[4] + CFG['timezone'] * 3600)), db_getufname(m[1]), m[2]))
+        forwardmulti_t(message_ids, chat_id, reply_to_message_id)
         logging.debug('Manually forwarded: %s' % (message_ids,))
-        sendmsg('\n'.join(text) or 'Found nothing.', chat_id, reply_to_message_id)
+
+def forwardmulti_t(message_ids, chat_id, reply_to_message_id=None):
+    text = []
+    for message_id in message_ids:
+        m = db_getmsg(message_id)
+        if m:
+            text.append('[%s] %s: %s' % (time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(m[4] + CFG['timezone'] * 3600)), db_getufname(m[1]), m[2]))
+    sendmsg('\n'.join(text) or 'Found nothing.', chat_id, reply_to_message_id)
 
 def typing(chat_id):
     logging.info('sendChatAction: %r' % chat_id)
@@ -379,7 +392,7 @@ def cmd_context(expr, chatid, replyid):
         sendmsg('Syntax error. Usage: ' + cmd_context.__doc__, chatid, replyid)
         return
     typing(chatid)
-    forwardmulti(range(mid - limit, mid + limit + 1), chatid, replyid)
+    forwardmulti_t(range(mid - limit, mid + limit + 1), chatid, replyid)
 
 def ellipsisresult(s, find, maxctx=50):
     lnid = s.lower().index(find.lower())
@@ -388,35 +401,35 @@ def ellipsisresult(s, find, maxctx=50):
         r = '… %s …' % r
     return r
 
+re_search_number = re.compile(r'([0-9]+)(,[0-9]+)?')
+
 def cmd_search(expr, chatid, replyid):
-    '''/search <keyword> [number=5] Search the group log for recent messages. max=20'''
+    '''/search <keyword> [number=5|number,offset] Search the group log for recent messages. max(number)=20'''
+    keyword, limit, offset = expr, 5, 0
     expr = expr.split(' ')
-    try:
-        if len(expr) > 1:
+    if len(expr) > 1:
+        ma = re_search_number.match(expr[-1])
+        if ma:
             keyword = ' '.join(expr[:-1])
-            limit = max(min(int(expr[-1]), 20), 1)
-        else:
-            keyword, limit = expr[0], 5
-    except Exception:
-        keyword, limit = expr, 5
+            limit = max(min(int(ma.group(1)), 20), 1)
+            offset = int(ma.group(2)[1:]) if ma.group(2) else 0
     typing(chatid)
     result = []
-    for uid, fr, text, date in conn.execute("SELECT id, src, text, date FROM messages WHERE text LIKE ? ESCAPE '^' ORDER BY date DESC LIMIT ?", ('%' + keyword.replace('%', '^%').replace('_', '^_').replace('^', '^^') + '%', limit)).fetchall():
+    for uid, fr, text, date in conn.execute("SELECT id, src, text, date FROM messages WHERE text LIKE ? ORDER BY date DESC LIMIT ? OFFSET ?", ('%' + keyword + '%', limit, offset)).fetchall():
         result.append('[%d|%s] %s: %s' % (uid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), db_getufname(fr), ellipsisresult(text, keyword)))
     sendmsg('\n'.join(result) or 'Found nothing.', chatid, replyid)
 
 def cmd_user(expr, chatid, replyid):
-    '''/user <@username> [number=5] Search the group log for user's messages. max=20'''
+    '''/user <@username> [number=5|number,offset] Search the group log for user's messages. max(number)=20'''
+    username, limit, offset = expr, 5, 0
     expr = expr.split(' ')
-    try:
-        if len(expr) > 1:
+    if len(expr) > 1:
+        ma = re_search_number.match(expr[-1])
+        if ma:
             username = expr[0]
-            limit = max(min(int(expr[-1]), 20), 1)
-        else:
-            username, limit = expr[0], 5
-        if not username.startswith('@'):
-            raise ValueError
-    except Exception:
+            limit = max(min(int(ma.group(1)), 20), 1)
+            offset = int(ma.group(2)[1:]) if ma.group(2) else 0
+    if not username.startswith('@'):
         sendmsg('Syntax error. Usage: ' + cmd_user.__doc__, chatid, replyid)
         return
     typing(chatid)
@@ -425,7 +438,7 @@ def cmd_user(expr, chatid, replyid):
         sendmsg('User not found.', chatid, replyid)
     uid = uid[0]
     result = []
-    for uid, text, date in conn.execute("SELECT id, text, date FROM messages WHERE src = ? ORDER BY date DESC LIMIT ?", (uid, limit)):
+    for uid, text, date in conn.execute("SELECT id, text, date FROM messages WHERE src = ? ORDER BY date DESC LIMIT ? OFFSET ?", (uid, limit, offset)):
         result.append('[%d|%s] %s' % (uid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), text))
     sendmsg('\n'.join(result) or 'Found nothing.', chatid, replyid)
 
@@ -438,11 +451,12 @@ def cmd_yesterday(expr, chatid, replyid):
 def cmd_stat(expr, chatid, replyid):
     '''/quote [minutes=1440] Show statistics.'''
     try:
-        minutes = min(max(int(expr), 1), 1400013)
+        minutes = min(max(int(expr), 1), 3359733)
     except Exception:
         minutes = 1440
-    hr, m = divmod(minutes, 60)
-    timestr = (' %d 小时' % hr if hr else '') + (' %d 分钟' % m if m else '')
+    h, m = divmod(minutes, 60)
+    d, h = divmod(h, 24)
+    timestr = (' %d 天' % d if d else '') + (' %d 小时' % h if h else '') + (' %d 分钟' % m if m else '')
     r = conn.execute('SELECT src FROM messages WHERE date > ?', (time.time() - minutes * 60,)).fetchall()
     if not r:
         sendmsg('在最近%s内无消息。' % timestr, chatid, replyid)
@@ -465,6 +479,14 @@ def cmd_calc(expr, chatid, replyid):
             sendmsg(res or 'Nothing', chatid, replyid)
     else:
         sendmsg('Syntax error. Usage: ' + cmd_calc.__doc__, chatid, replyid)
+
+def cmd_py(expr, chatid, replyid):
+    '''/py <expr> Evaluate Python 2 expression <expr>.'''
+    if expr:
+        res = geteval(expr)
+        sendmsg(res or 'None or error occurred.', chatid, replyid)
+    else:
+        sendmsg('Syntax error. Usage: ' + cmd_py.__doc__, chatid, replyid)
 
 def cmd_quote(expr, chatid, replyid):
     '''/quote Send a today's random message.'''
@@ -524,7 +546,7 @@ def cmd_welcome(expr, chatid, replyid):
         sendmsg('欢迎 %s 加入本群！' % db_getufname(usr["id"]), chatid, replyid)
 
 def cmd_233(expr, chatid, replyid):
-    sendmsg(random.choice(('🌝', '🌚', '2333', SAY_Q.get())), chatid, replyid)
+    sendmsg(random.choice(('🌝', '🌚')), chatid, replyid)
 
 def cmd_start(expr, chatid, replyid):
     if chatid != -CFG['groupid']:
@@ -548,6 +570,7 @@ COMMANDS = collections.OrderedDict((
 ('yesterday', cmd_yesterday),
 ('stat', cmd_stat),
 ('calc', cmd_calc),
+('py', cmd_py),
 ('quote', cmd_quote),
 ('say', cmd_say),
 ('reply', cmd_reply),
@@ -568,8 +591,16 @@ URL = 'https://api.telegram.org/bot%s/' % CFG['token']
 
 #importdb('telegram-history.db')
 
+MSG_Q = queue.Queue()
+SAY_Q = queue.Queue(maxsize=50)
+SAY_LCK = threading.Lock()
+EVIL_LCK = threading.Lock()
+
 SAY_CMD = ('python3', 'say.py', 'chat.binlm', 'chatdict.txt', 'context.pkl')
 SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+
+EVIL_CMD = ('python', 'seccomp.py')
+EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
 fx233es = fparser.Parser(numtype='decimal')
 
