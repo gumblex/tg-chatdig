@@ -551,7 +551,16 @@ def cmd_welcome(expr, chatid, replyid):
         sendmsg('欢迎 %s 加入本群！' % db_getufname(usr["id"]), chatid, replyid)
 
 def cmd_233(expr, chatid, replyid):
-    sendmsg(random.choice(('🌝', '🌚')), chatid, replyid)
+    try:
+        num = max(min(int(expr), 100), 1)
+    except Exception:
+        num = 1
+    w = round(num ** .5)
+    h, rem = divmod(num, w)
+    txt = '\n'.join(''.join(srandom.choice('🌝🌚') for i in range(w)) for j in range(h))
+    if rem:
+        txt += '\n' + ''.join(srandom.choice('🌝🌚') for i in range(rem))
+    sendmsg(txt, chatid, replyid)
 
 def cmd_start(expr, chatid, replyid):
     if chatid != -CFG['groupid']:
@@ -586,6 +595,8 @@ COMMANDS = collections.OrderedDict((
 ('start', cmd_start),
 ('help', cmd_help)
 ))
+
+srandom = random.SystemRandom()
 
 OFFSET = conn.execute('SELECT val FROM config WHERE id = 0').fetchone()
 OFFSET = OFFSET[0] if OFFSET else 0
