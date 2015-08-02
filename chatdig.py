@@ -4,6 +4,7 @@
 import os
 import re
 import sys
+import math
 import time
 import json
 import queue
@@ -124,15 +125,14 @@ def getsayingbytext(text=''):
 def geteval(text=''):
     global EVIL_P
     with EVIL_LCK:
+        if EVIL_P.returncode is not None:
+            EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         try:
-            EVIL_P.stdin.write(text.strip().encode('utf-8') + b'\n')
-            EVIL_P.stdin.flush()
-            result = EVIL_P.stdout.readline().strip().decode('utf-8')
-        except BrokenPipeError:
-            EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-            EVIL_P.stdin.write(text.strip().encode('utf-8') + b'\n')
-            EVIL_P.stdin.flush()
-            result = EVIL_P.stdout.readline().strip().decode('utf-8')
+            result, errs = EVIL_P.communicate(text.strip().encode('utf-8'), timeout=10)
+        except Exception: # TimeoutExpired
+            EVIL_P.kill()
+            result, errs = EVIL_P.communicate()
+        result = result.strip().decode('utf-8', errors='replace')
     return result
 
 ### DB import
@@ -487,8 +487,8 @@ def cmd_py(expr, chatid, replyid):
             sendmsg('Expression too long.', chatid, replyid)
         else:
             res = geteval(expr)
-            if len(res) > 500:
-                res = res[:500] + '...'
+            if len(res) > 300:
+                res = res[:300] + '...'
             sendmsg(res or 'None or error occurred.', chatid, replyid)
     else:
         sendmsg('Syntax error. Usage: ' + cmd_py.__doc__, chatid, replyid)
@@ -555,7 +555,7 @@ def cmd_233(expr, chatid, replyid):
         num = max(min(int(expr), 100), 1)
     except Exception:
         num = 1
-    w = round(num ** .5)
+    w = math.ceil(num ** .5)
     h, rem = divmod(num, w)
     txt = '\n'.join(''.join(srandom.choice('🌝🌚') for i in range(w)) for j in range(h))
     if rem:
@@ -578,6 +578,7 @@ def cmd_help(expr, chatid, replyid):
 COMMANDS = collections.OrderedDict((
 ('m', cmd_getmsg),
 ('context', cmd_context),
+('s', cmd_search),
 ('search', cmd_search),
 ('user', cmd_user),
 ('today', cmd_today),
@@ -616,7 +617,7 @@ SAY_CMD = ('python3', 'say.py', 'chat.binlm', 'chatdict.txt', 'context.pkl')
 SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
 EVIL_CMD = ('python', 'seccomp.py')
-EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 fx233es = fparser.Parser(numtype='decimal')
 

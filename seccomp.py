@@ -24,10 +24,10 @@
 
 import os
 import sys
-import json
 import signal
 import socket
 import struct
+import marshal
 import resource
 
 import cffi
@@ -50,7 +50,7 @@ def read_exact(fp, n):
     while len(buf) < n:
         buf2 = os.read(fp.fileno(), n)
         if not buf2:
-            _exit(123)
+            _exit(233)
         buf += buf2
     return buf2
 
@@ -59,7 +59,7 @@ def write_exact(fp, s):
     while done < len(s):
         written = os.write(fp.fileno(), s[done:])
         if not written:
-            _exit(123)
+            _exit(233)
         done += written
 
 class SecureEvalHost(object):
@@ -81,7 +81,10 @@ class SecureEvalHost(object):
         os.kill(self.pid, signal.SIGKILL)
 
     def do_eval(self, msg):
-        return {'result': eval(msg['body'], self.child_globals, {})}
+        try:
+            return {'result': unicode(eval(msg['body'], self.child_globals, {}))}
+        except Exception as ex:
+            return {'result': repr(ex)}
 
     def _child_main(self):
         self.host.close()
@@ -96,22 +99,22 @@ class SecureEvalHost(object):
         prctl.set_seccomp(True)
         while True:
             sz, = struct.unpack('>L', read_exact(self.child, 4))
-            doc = json.loads(read_exact(self.child, sz))
+            doc = marshal.loads(read_exact(self.child, sz))
             if doc['cmd'] == 'eval':
                 resp = self.do_eval(doc)
             elif doc['cmd'] == 'exit':
                 _exit(0)
-            goobs = json.dumps(resp)
+            goobs = marshal.dumps(resp)
             write_exact(self.child, struct.pack('>L', len(goobs)))
             write_exact(self.child, goobs)
 
     def eval(self, s):
-        msg = json.dumps({'cmd': 'eval', 'body': s})
+        msg = marshal.dumps({'cmd': 'eval', 'body': s})
         write_exact(self.host, struct.pack('>L', len(msg)))
         write_exact(self.host, msg)
         sz, = struct.unpack('>L', read_exact(self.host, 4))
-        goobs = json.loads(read_exact(self.host, sz))
-        return goobs['result']
+        goobs = marshal.loads(read_exact(self.host, sz))
+        return goobs['result'].encode('iso-8859-1')
 
 
 def go():
@@ -119,7 +122,7 @@ def go():
     sec.child_globals.update({'re': re, 'math': math, 'cmath': cmath})
     sec.start_child()
     try:
-        print(sec.eval(raw_input()))
+        sys.stdout.write(sec.eval(sys.stdin.read()) + '\n')
     finally:
         sec.kill_child()
 
