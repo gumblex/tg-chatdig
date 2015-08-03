@@ -17,8 +17,9 @@ import functools
 import subprocess
 import collections
 
-import fparser
 import requests
+#from vendor import fparser
+from vendor import chinesename
 
 __version__ = '1.0'
 
@@ -116,7 +117,7 @@ def getsayingbytext(text=''):
             SAY_P.stdin.flush()
             say = SAY_P.stdout.readline().strip().decode('utf-8')
         except BrokenPipeError:
-            SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
             SAY_P.stdin.write(text.strip().encode('utf-8') + b'\n')
             SAY_P.stdin.flush()
             say = SAY_P.stdout.readline().strip().decode('utf-8')
@@ -126,7 +127,7 @@ def geteval(text=''):
     global EVIL_P
     with EVIL_LCK:
         if EVIL_P.returncode is not None:
-            EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd='vendor')
         try:
             result, errs = EVIL_P.communicate(text.strip().encode('utf-8'), timeout=10)
         except Exception: # TimeoutExpired
@@ -442,10 +443,7 @@ def cmd_user(expr, chatid, replyid):
         result.append('[%d|%s] %s' % (uid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), text))
     sendmsg('\n'.join(result) or 'Found nothing.', chatid, replyid)
 
-def cmd_today(expr, chatid, replyid):
-    sendmsg('Not implemented.', chatid, replyid)
-
-def cmd_yesterday(expr, chatid, replyid):
+def cmd_digest(expr, chatid, replyid):
     sendmsg('Not implemented.', chatid, replyid)
 
 def cmd_stat(expr, chatid, replyid):
@@ -470,6 +468,7 @@ def cmd_stat(expr, chatid, replyid):
 
 def cmd_calc(expr, chatid, replyid):
     '''/calc <expr> Calculate <expr>.'''
+    # Too many bugs
     if expr:
         r = fx233es.Evaluate(expr)
         if r is not None or fx233es.rformat:
@@ -492,6 +491,16 @@ def cmd_py(expr, chatid, replyid):
             sendmsg(res or 'None or error occurred.', chatid, replyid)
     else:
         sendmsg('Syntax error. Usage: ' + cmd_py.__doc__, chatid, replyid)
+
+def cmd_name(expr, chatid, replyid):
+    '''/name [pinyin] Get a Chinese name.'''
+    surnames, names = namemodel.processinput(expr, 10)
+    res = []
+    if surnames:
+        res.append('姓：' + ', '.join(surnames[:10]))
+    if names:
+        res.append('名：' + ', '.join(names[:10]))
+    sendmsg('\n'.join(res), chatid, replyid)
 
 def cmd_quote(expr, chatid, replyid):
     '''/quote Send a today's random message.'''
@@ -596,11 +605,11 @@ COMMANDS = collections.OrderedDict((
 ('s', cmd_search),
 ('search', cmd_search),
 ('user', cmd_user),
-('today', cmd_today),
-('yesterday', cmd_yesterday),
+('digest', cmd_digest),
 ('stat', cmd_stat),
-('calc', cmd_calc),
+#('calc', cmd_calc),
 ('py', cmd_py),
+('name', cmd_name),
 ('quote', cmd_quote),
 ('say', cmd_say),
 ('reply', cmd_reply),
@@ -630,12 +639,12 @@ SAY_LCK = threading.Lock()
 EVIL_LCK = threading.Lock()
 
 SAY_CMD = ('python3', 'say.py', 'chat.binlm', 'chatdict.txt', 'context.pkl')
-SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
 
 EVIL_CMD = ('python', 'seccomp.py')
-EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd='vendor')
 
-fx233es = fparser.Parser(numtype='decimal')
+# fx233es = fparser.Parser(numtype='decimal')
 
 pollthr = threading.Thread(target=getupdates)
 pollthr.daemon = True
@@ -644,6 +653,8 @@ pollthr.start()
 saythr = threading.Thread(target=getsaying)
 saythr.daemon = True
 saythr.start()
+
+namemodel = chinesename.NameModel('vendor/namemodel.m')
 
 logging.info('Satellite launched.')
 

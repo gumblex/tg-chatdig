@@ -82,7 +82,7 @@ class SecureEvalHost(object):
 
     def do_eval(self, msg):
         try:
-            return {'result': eval(msg['body'], self.child_globals, {})}
+            return {'result': str(eval(msg['body'], self.child_globals, {}))}
         except Exception as ex:
             return {'result': repr(ex)}
 

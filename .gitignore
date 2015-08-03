@@ -55,3 +55,17 @@ docs/_build/
 
 # PyBuilder
 target/
+
+
+old/
+experiment/
+*.log
+*.db
+config.json
+cmdbot.json
+vendor/chat.binlm
+vendor/chat.lm
+vendor/chatdict.txt
+vendor/chatlogf.txt
+vendor/context.pkl
+vendor/namemodel.m

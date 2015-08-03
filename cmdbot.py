@@ -17,7 +17,6 @@ import functools
 import subprocess
 import collections
 
-import fparser
 import requests
 
 __version__ = '1.0'
@@ -356,7 +355,7 @@ URL = 'https://api.telegram.org/bot%s/' % CFG['token']
 MSG_Q = queue.Queue()
 EVIL_LCK = threading.Lock()
 
-EVIL_CMD = ('python', 'seccomp.py')
+EVIL_CMD = ('python', 'vendor/seccomp.py')
 EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 pollthr = threading.Thread(target=getupdates)
