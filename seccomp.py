@@ -82,7 +82,7 @@ class SecureEvalHost(object):
 
     def do_eval(self, msg):
         try:
-            return {'result': unicode(eval(msg['body'], self.child_globals, {}))}
+            return {'result': eval(msg['body'], self.child_globals, {})}
         except Exception as ex:
             return {'result': repr(ex)}
 
@@ -114,7 +114,7 @@ class SecureEvalHost(object):
         write_exact(self.host, msg)
         sz, = struct.unpack('>L', read_exact(self.host, 4))
         goobs = marshal.loads(read_exact(self.host, sz))
-        return goobs['result'].encode('iso-8859-1')
+        return goobs['result']
 
 
 def go():

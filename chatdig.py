@@ -528,6 +528,21 @@ def cmd_echo(expr, chatid, replyid):
     else:
         sendmsg('ping', chatid, replyid)
 
+def cmd_whoami(expr, chatid, replyid):
+    '''/whoami Show information about you.'''
+    origmsg = MSG_CACHE.get(replyid, {})
+    if origmsg:
+        result = []
+        d = origmsg['from']
+        if 'username' in d:
+            result.append('@' + d['username'])
+        name = d['first_name']
+        if 'last_name' in d:
+            name += ' ' + d['last_name']
+        result.append(name)
+        result.append('id: %s' % d['id'])
+        sendmsg(', '.join(result), chatid, replyid)
+
 def cmd_hello(expr, chatid, replyid):
     delta = time.time() - daystart()
     if delta < 6*3600 or delta >= 23*3600:
@@ -590,6 +605,7 @@ COMMANDS = collections.OrderedDict((
 ('say', cmd_say),
 ('reply', cmd_reply),
 ('echo', cmd_echo),
+('whoami', cmd_whoami),
 ('hello', cmd_hello),
 ('welcome', cmd_welcome),
 ('233', cmd_233),
