@@ -1,7 +1,6 @@
 import os
 import re
 import itertools
-from zhconv import convert as zhconv
 
 halfwidth = frozenset('!(),:;?')
 fullwidth = frozenset(itertools.chain(
