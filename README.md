@@ -24,3 +24,7 @@ Executes telegram-cli and fetches history messages.
 ## fparser.py
 
 See https://github.com/gumblex/fxcalc
+
+## vendor/
+
+Some interesting functions.

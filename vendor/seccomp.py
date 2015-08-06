@@ -36,6 +36,7 @@ import prctl
 import re
 import math
 import cmath
+import itertools
 
 _ffi = cffi.FFI()
 _ffi.cdef('void _exit(int);')
@@ -119,7 +120,7 @@ class SecureEvalHost(object):
 
 def go():
     sec = SecureEvalHost()
-    sec.child_globals.update({'re': re, 'math': math, 'cmath': cmath})
+    sec.child_globals.update({'re': re, 'math': math, 'cmath': cmath, 'itertools': itertools})
     sec.start_child()
     try:
         sys.stdout.write(sec.eval(sys.stdin.read()) + '\n')

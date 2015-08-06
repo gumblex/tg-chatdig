@@ -69,3 +69,9 @@ vendor/chatdict.txt
 vendor/chatlogf.txt
 vendor/context.pkl
 vendor/namemodel.m
+vendor/libirc.py
+vendor/*.dawg
+vendor/pinyinlookup.py
+vendor/simpleime.py
+vendor/zhcdict.json
+vendor/zhconv.py

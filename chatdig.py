@@ -18,7 +18,10 @@ import collections
 
 import requests
 #from vendor import fparser
+from vendor import libirc
 from vendor import zhutil
+from vendor import zhconv
+from vendor import simpleime
 from vendor import mosesproxy
 from vendor import chinesename
 
@@ -31,7 +34,7 @@ __version__ = '1.0'
 
 #jieba.re_eng = re.compile('[a-zA-Z0-9_]', re.U)
 
-MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created'))
+MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created', '_ircuser'))
 
 logging.basicConfig(stream=sys.stdout, format='# %(asctime)s [%(levelname)s] %(message)s', level=logging.INFO)
 
@@ -137,6 +140,50 @@ def geteval(text=''):
         result = result.strip().decode('utf-8', errors='replace')
     return result
 
+def checkircconn():
+    global ircconn
+    if not ircconn or not ircconn.sock:
+        ircconn = libirc.IRCConnection()
+        ircconn.connect((CFG['ircserver'], CFG['ircport']), use_ssl=CFG['ircssl'])
+        ircconn.setnick(CFG['ircnick'])
+        ircconn.setuser(CFG['ircnick'], CFG['ircnick'])
+        ircconn.join(CFG['ircchannel'])
+        logging.info('IRC (re)connected.')
+
+def getircupd():
+    global MSG_Q, IRCOFFSET
+    while 1:
+        checkircconn()
+        line = ircconn.parse(block=False)
+        if line and line["cmd"] == "PRIVMSG":
+            if line["dest"] != CFG['ircnick'] and not re.match(CFG['ircbanre'], line["nick"]):
+                msg = {
+                    'message_id': IRCOFFSET,
+                    'from': {'id': CFG['ircbotid'], 'first_name': '到总部の黑洞', 'username': 'orzirc_bot'},
+                    'date': int(time.time()),
+                    'chat': {'id': -CFG['groupid'], 'title': CFG['ircchannel']},
+                    'text': line["msg"].strip(),
+                    '_ircuser': line["nick"]
+                }
+                MSG_Q.put({'update_id': IRCOFFSET, 'message': msg})
+                IRCOFFSET += 1
+        time.sleep(.5)
+
+def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
+    if ircconn:
+        checkircconn()
+        if reply_to_message_id:
+            m = MSG_CACHE.get(reply_to_message_id, {})
+            if 'from' in m:
+                text = "%s: %s" % (db_getufname(m['from']['id']), text)
+        elif forward_message_id:
+            m = db_getmsg(forward_message_id)
+            if m:
+                text = "Fwd %s: %s" % (db_getufname(m[1]), m[2])
+        text = text.strip()
+        if '\n' not in text:
+            ircconn.say(CFG['ircchannel'], text)
+
 ### DB import
 
 def importdb(filename):
@@ -189,7 +236,8 @@ def bot_api(method, **params):
     for att in range(2):
         try:
             req = HSession.get(URL + method, params=params)
-            ret = json.loads(req.text)
+            retjson = req.content
+            ret = json.loads(retjson.decode('utf-8'))
             break
         except Exception as ex:
             if att < 1:
@@ -213,20 +261,26 @@ def sendmsg(text, chat_id, reply_to_message_id=None):
     logging.info('sendMessage(%s): %s' % (len(text), text[:20]))
     if len(text) > 2000:
         text = text[:1999] + '…'
+    if reply_to_message_id and reply_to_message_id < 0:
+        reply_to_message_id = None
     m = bot_api('sendMessage', chat_id=chat_id, text=text, reply_to_message_id=reply_to_message_id)
     if chat_id == -CFG['groupid']:
         logmsg(m)
+        irc_send(text, reply_to_message_id=reply_to_message_id)
 
 def forward(message_id, chat_id, reply_to_message_id=None):
     logging.info('forwardMessage: %r' % message_id)
     try:
-        bot_api('forwardMessage', chat_id=chat_id, from_chat_id=-CFG['groupid'], message_id=message_id)
+        r = bot_api('forwardMessage', chat_id=chat_id, from_chat_id=-CFG['groupid'], message_id=message_id)
         logging.debug('Forwarded: %s' % message_id)
     except BotAPIFailed as ex:
         m = db_getmsg(message_id)
         if m:
-            sendmsg('[%s] %s: %s' % (time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(m[4] + CFG['timezone'] * 3600)), db_getufname(m[1]), m[2]), chat_id, reply_to_message_id)
+            r = sendmsg('[%s] %s: %s' % (time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(m[4] + CFG['timezone'] * 3600)), db_getufname(m[1]), m[2]), chat_id, reply_to_message_id)
             logging.debug('Manually forwarded: %s' % message_id)
+    if chat_id == -CFG['groupid']:
+        logmsg(r)
+        irc_send(forward_message_id=forward_message_id)
 
 def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
     failed = False
@@ -275,6 +329,11 @@ def daystart(sec=None):
         sec = time.time()
     return (sec + CFG["timezone"]*3600)//86400 * 86400 - CFG["timezone"]*3600
 
+def uniq(seq): # Dave Kirby
+    # Order preserving
+    seen = set()
+    return [x for x in seq if x not in seen and not seen.add(x)]
+
 def classify(msg):
     '''
     Classify message type:
@@ -290,9 +349,9 @@ def classify(msg):
     '''
     logging.debug(msg)
     chat = msg['chat']
-    text = msg.get('text')
+    text = msg.get('text', '').strip()
     if text:
-        if text.startswith('/') or ('@' + CFG['botname']) in text:
+        if text[0] in "/'" or ('@' + CFG['botname']) in text:
             return 0
         elif 'first_name' in chat:
             return 0
@@ -317,7 +376,7 @@ def command(text, chatid, replyid):
         t = text.strip().split(' ')
         if not t:
             return
-        if t[0][0] == '/':
+        if t[0][0] in "/'":
             cmd = t[0][1:].lower().replace('@' + CFG['botname'], '')
             if cmd in COMMANDS:
                 if chatid > 0 or chatid == -CFG['groupid'] or cmd in PUBLIC:
@@ -345,6 +404,8 @@ def processmsg():
     uid = d['update_id']
     if 'message' in d:
         msg = d['message']
+        if 'text' in msg:
+            msg['text'] = msg['text'].replace('\xa0', ' ')
         MSG_CACHE[msg['message_id']] = msg
         cls = classify(msg)
         logging.debug('Classified as: %s', cls)
@@ -425,34 +486,52 @@ def cmd_context(expr, chatid, replyid):
     forwardmulti_t(range(mid - limit, mid + limit + 1), chatid, replyid)
 
 def ellipsisresult(s, find, maxctx=50):
-    try:
-        lnid = s.lower().index(find.lower())
-        r = s[max(0, lnid - maxctx):min(len(s), lnid + maxctx)].strip()
-        if len(r) < len(s):
-            r = '… %s …' % r
-        return r
-    except ValueError:
+    if find:
+        try:
+            lnid = s.lower().index(find.lower())
+            r = s[max(0, lnid - maxctx):min(len(s), lnid + maxctx)].strip()
+            if len(r) < len(s):
+                r = '… %s …' % r
+            return r
+        except ValueError:
+            return s
+    else:
         return s
 
 re_search_number = re.compile(r'([0-9]+)(,[0-9]+)?')
 
 def cmd_search(expr, chatid, replyid):
-    '''/search|/s <keyword> [number=5|number,offset] Search the group log for recent messages. max(number)=20'''
-    keyword, limit, offset = expr, 5, 0
+    '''/search|/s [@username] [keyword] [number=5|number,offset] Search the group log for recent messages. max(number)=20'''
+    username, uid, limit, offset = None, None, 5, 0
     expr = expr.split(' ')
     if len(expr) > 1:
         ma = re_search_number.match(expr[-1])
         if ma:
-            keyword = ' '.join(expr[:-1])
+            expr = expr[:-1]
             limit = max(min(int(ma.group(1)), 20), 1)
             offset = int(ma.group(2)[1:]) if ma.group(2) else 0
+    if expr[0][0] == '@':
+        username = expr[0][1:]
+        keyword = ' '.join(expr[1:])
+    else:
+        keyword = ' '.join(expr)
+    if username:
+        uid = db_getuidbyname(username)
     typing(chatid)
+    if uid is None:
+        keyword = ' '.join(expr)
+        sqr = conn.execute("SELECT id, src, text, date FROM messages WHERE text LIKE ? ORDER BY date DESC LIMIT ? OFFSET ?", ('%' + keyword + '%', limit, offset)).fetchall()
+    else:
+        sqr = conn.execute("SELECT id, src, text, date FROM messages WHERE src = ? AND text LIKE ? ORDER BY date DESC LIMIT ? OFFSET ?", (uid, '%' + keyword + '%', limit, offset)).fetchall()
     result = []
-    for uid, fr, text, date in conn.execute("SELECT id, src, text, date FROM messages WHERE text LIKE ? ORDER BY date DESC LIMIT ? OFFSET ?", ('%' + keyword + '%', limit, offset)).fetchall():
+    for mid, fr, text, date in sqr:
         text = ellipsisresult(text, keyword)
         if len(text) > 100:
             text = text[:100] + '…'
-        result.append('[%d|%s] %s: %s' % (uid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), db_getufname(fr), text))
+        if uid:
+            result.append('[%d|%s] %s' % (mid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), text))
+        else:
+            result.append('[%d|%s] %s: %s' % (mid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), db_getufname(fr), text))
     sendmsg('\n'.join(result) or 'Found nothing.', chatid, replyid)
 
 def cmd_user(expr, chatid, replyid):
@@ -486,7 +565,7 @@ def timestring(minutes):
     return (' %d 天' % d if d else '') + (' %d 小时' % h if h else '') + (' %d 分钟' % m if m else '')
 
 def cmd_uinfo(expr, chatid, replyid):
-    '''/uinfo [@username] [minutes=1440] Show information about <@username>.'''
+    '''/user|/uinfo [@username] [minutes=1440] Show information about <@username>.'''
     if expr:
         expr = expr.split(' ')
         username = expr[0]
@@ -536,7 +615,7 @@ def cmd_uinfo(expr, chatid, replyid):
     sendmsg('\n'.join(result), chatid, replyid)
 
 def cmd_stat(expr, chatid, replyid):
-    '''/quote [minutes=1440] Show statistics.'''
+    '''/stat [minutes=1440] Show statistics.'''
     try:
         minutes = min(max(int(expr), 1), 3359733)
     except Exception:
@@ -592,6 +671,21 @@ def cmd_name(expr, chatid, replyid):
     if names:
         res.append('名：' + ', '.join(names[:10]))
     sendmsg('\n'.join(res), chatid, replyid)
+
+def cmd_ime(expr, chatid, replyid):
+    '''/ime [pinyin] Simple Pinyin IME.'''
+    tinput = ''
+    origmsg = MSG_CACHE.get(replyid, {})
+    if 'reply_to_message' in origmsg:
+        tinput = origmsg['reply_to_message'].get('text', '')
+    tinput = (expr or tinput).strip()
+    if len(tinput) > 200:
+        tinput = tinput[:200] + '…'
+    if not tinput:
+        sendmsg('Syntax error. Usage: ' + cmd_ime.__doc__, chatid, replyid)
+        return
+    res = zhconv.convert(simpleime.pinyininput(tinput), 'zh-hans')
+    sendmsg(res, chatid, replyid)
 
 def cmd_quote(expr, chatid, replyid):
     '''/quote Send a today's random message.'''
@@ -697,7 +791,7 @@ def cmd_233(expr, chatid, replyid):
         txt += '\n' + ''.join(srandom.choice('🌝🌚') for i in range(rem))
     wcount = txt.count('🌝')
     if num > 9:
-        txt += '\n' + '🌝%d/🌚%d' % (wcount, num - wcount)
+        txt += '\n' + '(🌝%d/🌚%d)' % (wcount, num - wcount)
     sendmsg(txt, chatid, replyid)
 
 def cmd_start(expr, chatid, replyid):
@@ -709,9 +803,9 @@ def cmd_help(expr, chatid, replyid):
     if chatid == -CFG['groupid']:
         sendmsg('Full help disabled in this group.', chatid, replyid)
     elif chatid > 0:
-        sendmsg('\n'.join(cmd.__doc__ for cmd in COMMANDS.values() if cmd.__doc__), chatid, replyid)
+        sendmsg('\n'.join(uniq(cmd.__doc__ for cmd in COMMANDS.values() if cmd.__doc__)), chatid, replyid)
     else:
-        sendmsg('\n'.join(cmd.__doc__ for cmdname, cmd in COMMANDS.items() if cmd.__doc__ and cmdname in PUBLIC), chatid, replyid)
+        sendmsg('\n'.join(uniq(cmd.__doc__ for cmdname, cmd in COMMANDS.items() if cmd.__doc__ and cmdname in PUBLIC)), chatid, replyid)
 
 
 # should document usage in docstrings
@@ -720,13 +814,16 @@ COMMANDS = collections.OrderedDict((
 ('context', cmd_context),
 ('s', cmd_search),
 ('search', cmd_search),
-('user', cmd_user),
+#('user', cmd_user),
+('user', cmd_uinfo),
 ('uinfo', cmd_uinfo),
 ('digest', cmd_digest),
 ('stat', cmd_stat),
 #('calc', cmd_calc),
+('calc', cmd_py),
 ('py', cmd_py),
 ('name', cmd_name),
+('ime', cmd_ime),
 ('quote', cmd_quote),
 ('wyw', cmd_wyw),
 ('say', cmd_say),
@@ -742,6 +839,7 @@ COMMANDS = collections.OrderedDict((
 PUBLIC = set((
 'py',
 'name',
+'ime',
 'wyw',
 'say',
 'reply',
@@ -755,6 +853,8 @@ srandom = random.SystemRandom()
 
 OFFSET = conn.execute('SELECT val FROM config WHERE id = 0').fetchone()
 OFFSET = OFFSET[0] if OFFSET else 0
+IRCOFFSET = conn.execute('SELECT val FROM config WHERE id = 1').fetchone()
+IRCOFFSET = IRCOFFSET[0] if IRCOFFSET else -1000000
 USER_CACHE = LRUCache(20)
 MSG_CACHE = LRUCache(10)
 CFG = json.load(open('config.json'))
@@ -774,8 +874,6 @@ SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
 EVIL_CMD = ('python', 'seccomp.py')
 EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd='vendor')
 
-# fx233es = fparser.Parser(numtype='decimal')
-
 pollthr = threading.Thread(target=getupdates)
 pollthr.daemon = True
 pollthr.start()
@@ -784,7 +882,17 @@ saythr = threading.Thread(target=getsaying)
 saythr.daemon = True
 saythr.start()
 
+ircconn = None
+if 'ircserver' in CFG:
+    checkircconn()
+    ircthr = threading.Thread(target=getircupd)
+    ircthr.daemon = True
+    ircthr.start()
+
+# fx233es = fparser.Parser(numtype='decimal')
+
 namemodel = chinesename.NameModel('vendor/namemodel.m')
+simpleime.loaddict('vendor/pyindex.dawg', 'vendor/essay.dawg')
 
 logging.info('Satellite launched.')
 
@@ -797,6 +905,7 @@ try:
             continue
 finally:
     conn.execute('REPLACE INTO config (id, val) VALUES (0, ?)', (OFFSET,))
+    conn.execute('REPLACE INTO config (id, val) VALUES (1, ?)', (IRCOFFSET,))
     db.commit()
     SAY_P.terminate()
     logging.info('Shut down cleanly.')
