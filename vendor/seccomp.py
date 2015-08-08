@@ -38,6 +38,9 @@ import math
 import cmath
 import itertools
 
+reload(sys)
+sys.setdefaultencoding("utf-8")
+
 _ffi = cffi.FFI()
 _ffi.cdef('void _exit(int);')
 _libc = _ffi.dlopen(None)

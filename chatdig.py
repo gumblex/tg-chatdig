@@ -17,13 +17,13 @@ import subprocess
 import collections
 
 import requests
-#from vendor import fparser
 from vendor import libirc
 from vendor import zhutil
 from vendor import zhconv
 from vendor import simpleime
 from vendor import mosesproxy
 from vendor import chinesename
+#from vendor import fparser
 
 __version__ = '1.0'
 
@@ -159,7 +159,7 @@ def getircupd():
             if line["dest"] != CFG['ircnick'] and not re.match(CFG['ircbanre'], line["nick"]):
                 msg = {
                     'message_id': IRCOFFSET,
-                    'from': {'id': CFG['ircbotid'], 'first_name': '到总部の黑洞', 'username': 'orzirc_bot'},
+                    'from': {'id': CFG['ircbotid'], 'first_name': CFG['ircbotname'], 'username': 'orzirc_bot'},
                     'date': int(time.time()),
                     'chat': {'id': -CFG['groupid'], 'title': CFG['ircchannel']},
                     'text': line["msg"].strip(),
@@ -181,7 +181,7 @@ def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
             if m:
                 text = "Fwd %s: %s" % (db_getufname(m[1]), m[2])
         text = text.strip()
-        if '\n' not in text:
+        if text.count('\n') < 2:
             ircconn.say(CFG['ircchannel'], text)
 
 ### DB import
@@ -280,7 +280,7 @@ def forward(message_id, chat_id, reply_to_message_id=None):
             logging.debug('Manually forwarded: %s' % message_id)
     if chat_id == -CFG['groupid']:
         logmsg(r)
-        irc_send(forward_message_id=forward_message_id)
+        irc_send(forward_message_id=message_id)
 
 def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
     failed = False
@@ -288,7 +288,7 @@ def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
     for message_id in message_ids:
         logging.info('forwardMessage: %r' % message_id)
         try:
-            bot_api('forwardMessage', chat_id=chat_id, from_chat_id=-CFG['groupid'], message_id=message_id)
+            r = bot_api('forwardMessage', chat_id=chat_id, from_chat_id=-CFG['groupid'], message_id=message_id)
             logging.debug('Forwarded: %s' % message_id)
         except BotAPIFailed as ex:
             failed = True
@@ -296,6 +296,9 @@ def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
     if failed:
         forwardmulti_t(message_ids, chat_id, reply_to_message_id)
         logging.debug('Manually forwarded: %s' % (message_ids,))
+    elif chat_id == -CFG['groupid']:
+        for message_id in message_ids:
+            irc_send(forward_message_id=message_id)
 
 def forwardmulti_t(message_ids, chat_id, reply_to_message_id=None):
     text = []
@@ -344,7 +347,8 @@ def classify(msg):
             Replies to the bot's own messages
 
     - Group message (1)
-    - Ignored message (2)
+    - new_chat_participant (2)
+    - Ignored message (10)
     - Invalid calling (-1)
     '''
     logging.debug(msg)
@@ -364,14 +368,17 @@ def classify(msg):
         # Group chat
         if chat['id'] == -CFG['groupid']:
             if msg['from']['id'] == CFG['botid']:
+                return 10
+            elif 'new_chat_participant' in msg:
                 return 2
-            return 1
+            else:
+                return 1
         else:
-            return 2
+            return 10
     else:
         return -1
 
-def command(text, chatid, replyid):
+def command(text, chatid, replyid, msg):
     try:
         t = text.strip().split(' ')
         if not t:
@@ -381,21 +388,21 @@ def command(text, chatid, replyid):
             if cmd in COMMANDS:
                 if chatid > 0 or chatid == -CFG['groupid'] or cmd in PUBLIC:
                     logging.info('Command: ' + repr(t))
-                    COMMANDS[cmd](' '.join(t[1:]), chatid, replyid)
+                    COMMANDS[cmd](' '.join(t[1:]).strip(), chatid, replyid, msg)
             elif chatid > 0:
                 sendmsg('Invalid command. Send /help for help.', chatid, replyid)
         # 233333
         #elif all(n.isdigit() for n in t):
-            #COMMANDS['m'](' '.join(t), chatid, replyid)
+            #COMMANDS['m'](' '.join(t), chatid, replyid, msg)
         elif chatid != -CFG['groupid']:
-            t = ' '.join(t)
+            t = ' '.join(t).strip()
             logging.info('Reply: ' + t[:20])
-            COMMANDS['reply'](t, chatid, replyid)
+            COMMANDS['reply'](t, chatid, replyid, msg)
     except Exception:
         logging.exception('Excute command failed.')
 
-def async_command(text, chatid, replyid):
-    thr = threading.Thread(target=command, args=(text, chatid, replyid))
+def async_command(text, chatid, replyid, msg):
+    thr = threading.Thread(target=command, args=(text, chatid, replyid, msg))
     thr.run()
 
 def processmsg():
@@ -410,11 +417,14 @@ def processmsg():
         cls = classify(msg)
         logging.debug('Classified as: %s', cls)
         if cls == 0:
-            async_command(msg['text'], msg['chat']['id'], msg['message_id'])
+            async_command(msg['text'], msg['chat']['id'], msg['message_id'], msg)
             if msg['chat']['id'] == -CFG['groupid']:
                 logmsg(msg)
         elif cls == 1:
             logmsg(msg)
+        elif cls == 2:
+            logmsg(msg)
+            cmd__welcome(msg['text'], msg['chat']['id'], msg['message_id'], msg)
         elif cls == -1:
             sendmsg('Wrong usage', msg['chat']['id'], msg['message_id'])
 
@@ -461,7 +471,7 @@ def logmsg(d, iorignore=False):
 
 ### Commands
 
-def cmd_getmsg(expr, chatid, replyid):
+def cmd_getmsg(expr, chatid, replyid, msg):
     '''/m <message_id> [...] Get specified message(s) by ID(s).'''
     try:
         mids = tuple(map(int, expr.split()))
@@ -470,7 +480,7 @@ def cmd_getmsg(expr, chatid, replyid):
         return
     forwardmulti(mids, chatid, replyid)
 
-def cmd_context(expr, chatid, replyid):
+def cmd_context(expr, chatid, replyid, msg):
     '''/context <message_id> [number=2] Show the specified message and its context. max=10'''
     expr = expr.split(' ')
     try:
@@ -500,21 +510,24 @@ def ellipsisresult(s, find, maxctx=50):
 
 re_search_number = re.compile(r'([0-9]+)(,[0-9]+)?')
 
-def cmd_search(expr, chatid, replyid):
+def cmd_search(expr, chatid, replyid, msg):
     '''/search|/s [@username] [keyword] [number=5|number,offset] Search the group log for recent messages. max(number)=20'''
     username, uid, limit, offset = None, None, 5, 0
-    expr = expr.split(' ')
-    if len(expr) > 1:
-        ma = re_search_number.match(expr[-1])
-        if ma:
-            expr = expr[:-1]
-            limit = max(min(int(ma.group(1)), 20), 1)
-            offset = int(ma.group(2)[1:]) if ma.group(2) else 0
-    if expr[0][0] == '@':
-        username = expr[0][1:]
-        keyword = ' '.join(expr[1:])
+    if expr:
+        expr = expr.split(' ')
+        if len(expr) > 1:
+            ma = re_search_number.match(expr[-1])
+            if ma:
+                expr = expr[:-1]
+                limit = max(min(int(ma.group(1)), 20), 1)
+                offset = int(ma.group(2)[1:]) if ma.group(2) else 0
+        if expr[0][0] == '@':
+            username = expr[0][1:]
+            keyword = ' '.join(expr[1:])
+        else:
+            keyword = ' '.join(expr)
     else:
-        keyword = ' '.join(expr)
+        keyword = ''
     if username:
         uid = db_getuidbyname(username)
     typing(chatid)
@@ -534,47 +547,18 @@ def cmd_search(expr, chatid, replyid):
             result.append('[%d|%s] %s: %s' % (mid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), db_getufname(fr), text))
     sendmsg('\n'.join(result) or 'Found nothing.', chatid, replyid)
 
-def cmd_user(expr, chatid, replyid):
-    '''/user <@username> [number=5|number,offset] Search the group log for user's messages. max(number)=20'''
-    username, limit, offset = expr, 5, 0
-    expr = expr.split(' ')
-    if len(expr) > 1:
-        ma = re_search_number.match(expr[-1])
-        if ma:
-            username = expr[0]
-            limit = max(min(int(ma.group(1)), 20), 1)
-            offset = int(ma.group(2)[1:]) if ma.group(2) else 0
-    if not username.startswith('@'):
-        sendmsg('Syntax error. Usage: ' + cmd_user.__doc__, chatid, replyid)
-        return
-    typing(chatid)
-    uid = db_getuidbyname(username[1:])
-    if not uid:
-        sendmsg('User not found.', chatid, replyid)
-        return
-    result = []
-    for uid, text, date in conn.execute("SELECT id, text, date FROM messages WHERE src = ? ORDER BY date DESC LIMIT ? OFFSET ?", (uid, limit, offset)):
-        if len(text) > 100:
-            text = text[:100] + '…'
-        result.append('[%d|%s] %s' % (uid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), text))
-    sendmsg('\n'.join(result) or 'Found nothing.', chatid, replyid)
-
 def timestring(minutes):
     h, m = divmod(minutes, 60)
     d, h = divmod(h, 24)
     return (' %d 天' % d if d else '') + (' %d 小时' % h if h else '') + (' %d 分钟' % m if m else '')
 
-def cmd_uinfo(expr, chatid, replyid):
+def cmd_uinfo(expr, chatid, replyid, msg):
     '''/user|/uinfo [@username] [minutes=1440] Show information about <@username>.'''
     if expr:
         expr = expr.split(' ')
         username = expr[0]
         if not username.startswith('@'):
-            origmsg = MSG_CACHE.get(replyid)
-            if not origmsg:
-                sendmsg('Cache missed.', chatid, replyid)
-                return
-            uid = origmsg['from']['id']
+            uid = msg['from']['id']
             try:
                 minutes = min(max(int(expr[0]), 1), 3359733)
             except Exception:
@@ -589,10 +573,7 @@ def cmd_uinfo(expr, chatid, replyid):
             except Exception:
                 minutes = 1440
     else:
-        origmsg = MSG_CACHE.get(replyid, {})
-        if not origmsg:
-            return
-        uid = origmsg['from']['id']
+        uid = msg['from']['id']
         minutes = 1440
     user = db_getuser(uid)
     uinfoln = []
@@ -614,7 +595,7 @@ def cmd_uinfo(expr, chatid, replyid):
         result.append('在最近%s内没发消息。' % timestr)
     sendmsg('\n'.join(result), chatid, replyid)
 
-def cmd_stat(expr, chatid, replyid):
+def cmd_stat(expr, chatid, replyid, msg):
     '''/stat [minutes=1440] Show statistics.'''
     try:
         minutes = min(max(int(expr), 1), 3359733)
@@ -633,10 +614,10 @@ def cmd_stat(expr, chatid, replyid):
     msg.append('其他用户 %s 条，人均 %.2f 条' % (len(r) - sum(v for k, v in mcomm), count / len(ctr)))
     sendmsg('\n'.join(msg), chatid, replyid)
 
-def cmd_digest(expr, chatid, replyid):
+def cmd_digest(expr, chatid, replyid, msg):
     sendmsg('Not implemented.', chatid, replyid)
 
-def cmd_calc(expr, chatid, replyid):
+def cmd_calc(expr, chatid, replyid, msg):
     '''/calc <expr> Calculate <expr>.'''
     # Too many bugs
     if expr:
@@ -649,20 +630,20 @@ def cmd_calc(expr, chatid, replyid):
     else:
         sendmsg('Syntax error. Usage: ' + cmd_calc.__doc__, chatid, replyid)
 
-def cmd_py(expr, chatid, replyid):
+def cmd_py(expr, chatid, replyid, msg):
     '''/py <expr> Evaluate Python 2 expression <expr>.'''
     if expr:
-        if len(expr) > 500:
+        if len(expr) > 1000:
             sendmsg('Expression too long.', chatid, replyid)
         else:
             res = geteval(expr)
-            if len(res) > 300:
-                res = res[:300] + '...'
+            if len(res) > 500:
+                res = res[:500] + '...'
             sendmsg(res or 'None or error occurred.', chatid, replyid)
     else:
         sendmsg('Syntax error. Usage: ' + cmd_py.__doc__, chatid, replyid)
 
-def cmd_name(expr, chatid, replyid):
+def cmd_name(expr, chatid, replyid, msg):
     '''/name [pinyin] Get a Chinese name.'''
     surnames, names = namemodel.processinput(expr, 10)
     res = []
@@ -672,12 +653,11 @@ def cmd_name(expr, chatid, replyid):
         res.append('名：' + ', '.join(names[:10]))
     sendmsg('\n'.join(res), chatid, replyid)
 
-def cmd_ime(expr, chatid, replyid):
+def cmd_ime(expr, chatid, replyid, msg):
     '''/ime [pinyin] Simple Pinyin IME.'''
     tinput = ''
-    origmsg = MSG_CACHE.get(replyid, {})
-    if 'reply_to_message' in origmsg:
-        tinput = origmsg['reply_to_message'].get('text', '')
+    if 'reply_to_message' in msg:
+        tinput = msg['reply_to_message'].get('text', '')
     tinput = (expr or tinput).strip()
     if len(tinput) > 200:
         tinput = tinput[:200] + '…'
@@ -687,7 +667,7 @@ def cmd_ime(expr, chatid, replyid):
     res = zhconv.convert(simpleime.pinyininput(tinput), 'zh-hans')
     sendmsg(res, chatid, replyid)
 
-def cmd_quote(expr, chatid, replyid):
+def cmd_quote(expr, chatid, replyid, msg):
     '''/quote Send a today's random message.'''
     typing(chatid)
     sec = daystart()
@@ -697,7 +677,7 @@ def cmd_quote(expr, chatid, replyid):
     #forwardmulti((msg[0]-1, msg[0], msg[0]+1), chatid, replyid)
     forward(msg[0], chatid, replyid)
 
-def cmd_wyw(expr, chatid, replyid):
+def cmd_wyw(expr, chatid, replyid, msg):
     '''/wyw [c|m] <something> Translate something to or from classical Chinese.'''
     if expr[:2].strip() == 'c':
         lang = 'c2m'
@@ -708,9 +688,8 @@ def cmd_wyw(expr, chatid, replyid):
     else:
         lang = None
     tinput = ''
-    origmsg = MSG_CACHE.get(replyid, {})
-    if 'reply_to_message' in origmsg:
-        tinput = origmsg['reply_to_message'].get('text', '')
+    if 'reply_to_message' in msg:
+        tinput = msg['reply_to_message'].get('text', '')
     tinput = (expr or tinput).strip()
     if len(tinput) > 800:
         tinput = tinput[:800] + '……'
@@ -732,23 +711,22 @@ def cmd_wyw(expr, chatid, replyid):
     else:
         sendmsg(tinput, chatid, replyid)
 
-def cmd_say(expr, chatid, replyid):
+def cmd_say(expr, chatid, replyid, msg):
     '''/say Say something interesting.'''
     typing(chatid)
-    sendmsg(SAY_Q.get() or 'ERROR_BRAIN_CONNECT_FAILED', chatid, replyid)
+    sendmsg(SAY_Q.get() or 'ERROR_BRAIN_NOT_CONNECTED', chatid, replyid)
 
-def cmd_reply(expr, chatid, replyid):
+def cmd_reply(expr, chatid, replyid, msg):
     '''/reply [question] Reply to the conversation.'''
     typing(chatid)
-    origmsg = MSG_CACHE.get(replyid, {})
     text = ''
-    if 'reply_to_message' in origmsg:
-        text = origmsg['reply_to_message'].get('text', '')
+    if 'reply_to_message' in msg:
+        text = msg['reply_to_message'].get('text', '')
     text = (expr.strip() or text or ' '.join(t[0] for t in conn.execute("SELECT text FROM messages ORDER BY date DESC LIMIT 2").fetchall())).replace('\n', ' ')
     r = getsayingbytext(text)
     sendmsg(r or 'ERROR_BRAIN_CONNECT_FAILED', chatid, replyid)
 
-def cmd_echo(expr, chatid, replyid):
+def cmd_echo(expr, chatid, replyid, msg):
     '''/echo Parrot back.'''
     if 'ping' in expr.lower():
         sendmsg('pong', chatid, replyid)
@@ -757,7 +735,21 @@ def cmd_echo(expr, chatid, replyid):
     else:
         sendmsg('ping', chatid, replyid)
 
-def cmd_hello(expr, chatid, replyid):
+def cmd__cmd(expr, chatid, replyid, msg):
+    global SAY_P
+    if chatid < 0:
+        return
+    if expr == 'reload_model':
+        SAY_P.terminate()
+        SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
+        sendmsg('LM reloaded.', chatid, replyid)
+    elif expr == 'commit':
+        db.commit()
+        sendmsg('DB committed.', chatid, replyid)
+    else:
+        sendmsg('ping', chatid, replyid)
+
+def cmd_hello(expr, chatid, replyid, msg):
     delta = time.time() - daystart()
     if delta < 6*3600 or delta >= 23*3600:
         sendmsg('还不快点睡觉！', chatid, replyid)
@@ -770,16 +762,14 @@ def cmd_hello(expr, chatid, replyid):
     elif 18*3600 <= delta < 23*3600:
         sendmsg('晚上好！', chatid, replyid)
 
-def cmd_welcome(expr, chatid, replyid):
-    if chatid != -CFG['groupid']:
+def cmd__welcome(expr, chatid, replyid, msg):
+    if chatid > 0:
         return
-    r = conn.execute('SELECT media FROM messages WHERE date > ? AND media LIKE ? ORDER BY date DESC LIMIT 1', (time.time() - 3600, '%new_chat_participant%')).fetchone()
-    if r:
-        usr = json.loads(r[0])["new_chat_participant"]
-        USER_CACHE[usr["id"]] = (usr.get("username"), usr.get("first_name"), usr.get("last_name"))
-        sendmsg('欢迎 %s 加入本群！' % db_getufname(usr["id"]), chatid, replyid)
+    usr = msg["new_chat_participant"]
+    USER_CACHE[usr["id"]] = (usr.get("username"), usr.get("first_name"), usr.get("last_name"))
+    sendmsg('欢迎 %s 加入本群！' % db_getufname(usr["id"]), chatid, replyid)
 
-def cmd_233(expr, chatid, replyid):
+def cmd_233(expr, chatid, replyid, msg):
     try:
         num = max(min(int(expr), 100), 1)
     except Exception:
@@ -794,11 +784,11 @@ def cmd_233(expr, chatid, replyid):
         txt += '\n' + '(🌝%d/🌚%d)' % (wcount, num - wcount)
     sendmsg(txt, chatid, replyid)
 
-def cmd_start(expr, chatid, replyid):
+def cmd_start(expr, chatid, replyid, msg):
     if chatid != -CFG['groupid']:
         sendmsg('This is Orz Digger. It can help you search the long and boring chat log of the ##Orz group.\nSend me /help for help.', chatid, replyid)
 
-def cmd_help(expr, chatid, replyid):
+def cmd_help(expr, chatid, replyid, msg):
     '''/help Show usage.'''
     if chatid == -CFG['groupid']:
         sendmsg('Full help disabled in this group.', chatid, replyid)
@@ -814,7 +804,6 @@ COMMANDS = collections.OrderedDict((
 ('context', cmd_context),
 ('s', cmd_search),
 ('search', cmd_search),
-#('user', cmd_user),
 ('user', cmd_uinfo),
 ('uinfo', cmd_uinfo),
 ('digest', cmd_digest),
@@ -830,10 +819,10 @@ COMMANDS = collections.OrderedDict((
 ('reply', cmd_reply),
 ('echo', cmd_echo),
 ('hello', cmd_hello),
-('welcome', cmd_welcome),
 ('233', cmd_233),
 ('start', cmd_start),
-('help', cmd_help)
+('help', cmd_help),
+('_cmd', cmd__cmd)
 ))
 
 PUBLIC = set((
