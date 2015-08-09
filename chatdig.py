@@ -424,7 +424,7 @@ def processmsg():
             logmsg(msg)
         elif cls == 2:
             logmsg(msg)
-            cmd__welcome(msg['text'], msg['chat']['id'], msg['message_id'], msg)
+            cmd__welcome('', msg['chat']['id'], msg['message_id'], msg)
         elif cls == -1:
             sendmsg('Wrong usage', msg['chat']['id'], msg['message_id'])
 
