@@ -75,3 +75,5 @@ vendor/pinyinlookup.py
 vendor/simpleime.py
 vendor/zhcdict.json
 vendor/zhconv.py
+vendor/bf.py
+vendor/lispy.py
