@@ -125,10 +125,11 @@ def runapptask(cmd, args, sendargs):
         APP_TASK[tid] = sendargs
         try:
             APP_P.stdin.write(text.strip().encode('utf-8') + b'\n')
+            APP_P.stdin.flush()
         except BrokenPipeError:
             checkappproc()
             APP_P.stdin.write(text.strip().encode('utf-8') + b'\n')
-        APP_P.stdin.flush()
+            APP_P.stdin.flush()
         logging.debug('Wrote to APP_P: ' + text)
 
 def getappresult():
@@ -703,7 +704,7 @@ def cmd_bf(expr, chatid, replyid, msg):
         sendmsg('Syntax error. Usage: ' + cmd_bf.__doc__, chatid, replyid)
 
 def cmd_lisp(expr, chatid, replyid, msg):
-    '''/lisp <expr> Evaluate expression <expr> in a minimal set of Lisp.'''
+    '''/lisp <expr> Evaluate Lisp(Scheme)-like expression <expr>.'''
     if expr:
         runapptask('lisp', (expr,), (chatid, replyid))
     else:

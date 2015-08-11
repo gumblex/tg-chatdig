@@ -88,7 +88,7 @@ def cmd_bf(expr, datain=''):
     finally:
         if proc.returncode is None:
             proc.kill()
-    result = result.strip().decode('utf-8', errors='replace')
+    result = result.strip().replace(b'\x00', b'').decode('utf-8', errors='replace')
     return result or 'None or error occurred.'
 
 def cmd_lisp(expr):
