@@ -112,7 +112,7 @@ def getupdates():
 
 def checkappproc():
     global APP_P
-    if APP_P.returncode is not None:
+    if APP_P.poll() is not None:
         APP_P = subprocess.Popen(APP_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
 def runapptask(cmd, args, sendargs):
