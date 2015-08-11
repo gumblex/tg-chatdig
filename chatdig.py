@@ -77,6 +77,22 @@ class LRUCache:
                 self.cache.popitem(last=False)
         self.cache[key] = value
 
+def async_func(func):
+    @functools.wraps(func)
+    def wrapped(*args, **kwargs):
+        def func_noerr(*args, **kwargs):
+            try:
+                func(*args, **kwargs)
+            except Exception:
+                logging.exception('Async function failed.')
+        thr = threading.Thread(target=func_noerr, args=args, kwargs=kwargs)
+        thr.daemon = True
+        thr.start()
+    return wrapped
+
+def _raise_ex(ex):
+    raise ex
+
 ### Polling
 
 def getupdates():
@@ -130,7 +146,7 @@ def getappresult():
                 logging.error('Remote app server error.\n' + obj['exc'])
             sargs = APP_TASK.get(obj['id'])
             if sargs:
-                sendmsg(obj['ret'] or 'Nothing.', sargs[0], sargs[1])
+                sendmsg(obj['ret'].strip() or 'Empty.', sargs[0], sargs[1])
                 del APP_TASK[obj['id']]
             else:
                 logging.error('Task ID %s not found.' % obj['id'])
@@ -179,6 +195,7 @@ def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
         if text.count('\n') < 2:
             ircconn.say(CFG['ircchannel'], text)
 
+@async_func
 def irc_forward(msg):
     if not ircconn:
         return
@@ -195,11 +212,6 @@ def irc_forward(msg):
                 ircconn.say(CFG['ircchannel'], '[%s] %s' % (dc_getufname(msg['from']), ln))
     except Exception:
         logging.exception('Forward a message to IRC failed.')
-
-def async_irc_forward(msg):
-    thr = threading.Thread(target=irc_forward, args=(msg,))
-    thr.daemon = True
-    thr.start()
 
 ### DB import
 
@@ -271,12 +283,10 @@ def bot_api_noerr(method, **params):
     except Exception:
         logging.exception('Async bot API failed.')
 
-def async_send(method, **params):
-    thr = threading.Thread(target=bot_api_noerr, args=(method,), kwargs=params)
-    thr.daemon = True
-    thr.start()
-
+@async_func
 def sendmsg(text, chat_id, reply_to_message_id=None):
+    global LOG_Q
+    text = text.strip()
     if not text:
         logging.warning('Empty message ignored: %s, %s' % (chat_id, reply_to_message_id))
         return
@@ -287,10 +297,12 @@ def sendmsg(text, chat_id, reply_to_message_id=None):
         reply_to_message_id = None
     m = bot_api('sendMessage', chat_id=chat_id, text=text, reply_to_message_id=reply_to_message_id)
     if chat_id == -CFG['groupid']:
-        logmsg(m)
+        LOG_Q.put(m)
         irc_send(text, reply_to_message_id=reply_to_message_id)
 
+@async_func
 def forward(message_id, chat_id, reply_to_message_id=None):
+    global LOG_Q
     logging.info('forwardMessage: %r' % message_id)
     try:
         r = bot_api('forwardMessage', chat_id=chat_id, from_chat_id=-CFG['groupid'], message_id=message_id)
@@ -301,9 +313,10 @@ def forward(message_id, chat_id, reply_to_message_id=None):
             r = sendmsg('[%s] %s: %s' % (time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(m[4] + CFG['timezone'] * 3600)), db_getufname(m[1]), m[2]), chat_id, reply_to_message_id)
             logging.debug('Manually forwarded: %s' % message_id)
     if chat_id == -CFG['groupid']:
-        logmsg(r)
+        LOG_Q.put(r)
         irc_send(forward_message_id=message_id)
 
+@async_func
 def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
     failed = False
     message_ids = tuple(message_ids)
@@ -322,6 +335,7 @@ def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
         for message_id in message_ids:
             irc_send(forward_message_id=message_id)
 
+@async_func
 def forwardmulti_t(message_ids, chat_id, reply_to_message_id=None):
     text = []
     for message_id in message_ids:
@@ -330,6 +344,7 @@ def forwardmulti_t(message_ids, chat_id, reply_to_message_id=None):
             text.append('[%s] %s: %s' % (time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(m[4] + CFG['timezone'] * 3600)), db_getufname(m[1]), m[2]))
     sendmsg('\n'.join(text) or 'Found nothing.', chat_id, reply_to_message_id)
 
+@async_func
 def typing(chat_id):
     logging.info('sendChatAction: %r' % chat_id)
     bot_api('sendChatAction', chat_id=chat_id, action='typing')
@@ -410,7 +425,7 @@ def command(text, chatid, replyid, msg):
             if cmd in COMMANDS:
                 if chatid > 0 or chatid == -CFG['groupid'] or cmd in PUBLIC:
                     expr = ' '.join(t[1:]).strip()
-                    logging.info('Command: %s %s' % (cmd, expr))
+                    logging.info('Command: /%s %s' % (cmd, expr))
                     COMMANDS[cmd](expr, chatid, replyid, msg)
             elif chatid > 0:
                 sendmsg('Invalid command. Send /help for help.', chatid, replyid)
@@ -436,7 +451,7 @@ def processmsg():
         cls = classify(msg)
         logging.debug('Classified as: %s', cls)
         if msg['chat']['id'] == -CFG['groupid'] and CFG.get('t2i'):
-            async_irc_forward(msg)
+            irc_forward(msg)
         if cls == 0:
             if msg['chat']['id'] == -CFG['groupid']:
                 logmsg(msg)
@@ -448,6 +463,10 @@ def processmsg():
             cmd__welcome('', msg['chat']['id'], msg['message_id'], msg)
         elif cls == -1:
             sendmsg('Wrong usage', msg['chat']['id'], msg['message_id'])
+        try:
+            logmsg(LOG_Q.get_nowait())
+        except queue.Empty:
+            pass
 
 def db_adduser(d):
     user = (d['id'], d.get('username'), d.get('first_name'), d.get('last_name'))
@@ -773,6 +792,8 @@ def cmd__cmd(expr, chatid, replyid, msg):
     elif expr == 'commit':
         db.commit()
         sendmsg('DB committed.', chatid, replyid)
+    #elif expr == 'raiseex':  # For debug
+        #async_func(_raise_ex)(Exception('/_cmd raiseex'))
     else:
         sendmsg('ping', chatid, replyid)
 
@@ -885,6 +906,7 @@ URL = 'https://api.telegram.org/bot%s/' % CFG['token']
 #importupdates(OFFSET, 2000)
 
 MSG_Q = queue.Queue()
+LOG_Q = queue.Queue()
 APP_TASK = {}
 APP_LCK = threading.Lock()
 APP_CMD = ('python3', 'appserve.py')
@@ -917,6 +939,11 @@ try:
             logging.exception('Process a message failed.')
             continue
 finally:
+    while 1:
+        try:
+            logmsg(LOG_Q.get_nowait())
+        except queue.Empty:
+            break
     conn.execute('REPLACE INTO config (id, val) VALUES (0, ?)', (OFFSET,))
     conn.execute('REPLACE INTO config (id, val) VALUES (1, ?)', (IRCOFFSET,))
     json.dump(CFG, open('config.json', 'w'), sort_keys=True, indent=4)
