@@ -9,8 +9,8 @@ import operator
 import functools
 import itertools
 from math import log
-from common_surnames import d as common_surnames
-from lookuptable import chrevlookup, pinyintrie, surnamerev
+from .common_surnames import d as common_surnames
+from .lookuptable import chrevlookup, pinyintrie, surnamerev
 
 for py in tuple(chrevlookup.keys()):
     for ch in range(len(py)):

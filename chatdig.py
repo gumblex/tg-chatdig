@@ -18,21 +18,8 @@ import collections
 
 import requests
 from vendor import libirc
-from vendor import zhutil
-from vendor import zhconv
-from vendor import simpleime
-from vendor import mosesproxy
-from vendor import chinesename
-#from vendor import fparser
 
-__version__ = '1.0'
-
-# (昨日)
-# 今日焦点: xx,yy,zz (12345,45678)
-# (今日标签: #xx,#yy)
-# (今日语录: ......)
-
-#jieba.re_eng = re.compile('[a-zA-Z0-9_]', re.U)
+__version__ = '1.1'
 
 MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created', '_ircuser'))
 
@@ -107,38 +94,46 @@ def getupdates():
                 MSG_Q.put(upd)
         time.sleep(.1)
 
-def getsaying():
-    global SAY_P, SAY_Q
-    while 1:
-        say = getsayingbytext()
-        SAY_Q.put(say)
+def checkappproc():
+    global APP_P
+    if APP_P.returncode is not None:
+        APP_P = subprocess.Popen(APP_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
-def getsayingbytext(text=''):
-    global SAY_P
-    with SAY_LCK:
+def runapptask(cmd, args, sendargs):
+    '''`sendargs` should be (chatid, replyid)'''
+    global APP_P, APP_LCK, APP_TASK
+    with APP_LCK:
+        # Prevent float problems
+        tid = str(time.time())
+        text = json.dumps({"cmd": cmd, "args": args, "id": tid})
+        APP_TASK[tid] = sendargs
         try:
-            SAY_P.stdin.write(text.strip().encode('utf-8') + b'\n')
-            SAY_P.stdin.flush()
-            say = SAY_P.stdout.readline().strip().decode('utf-8')
+            APP_P.stdin.write(text.strip().encode('utf-8') + b'\n')
         except BrokenPipeError:
-            SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
-            SAY_P.stdin.write(text.strip().encode('utf-8') + b'\n')
-            SAY_P.stdin.flush()
-            say = SAY_P.stdout.readline().strip().decode('utf-8')
-    return say
+            checkappproc()
+            APP_P.stdin.write(text.strip().encode('utf-8') + b'\n')
+        APP_P.stdin.flush()
+        logging.debug('Wrote to APP_P: ' + text)
 
-def geteval(text=''):
-    global EVIL_P
-    with EVIL_LCK:
-        if EVIL_P.returncode is not None:
-            EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd='vendor')
+def getappresult():
+    global APP_P, APP_TASK
+    while 1:
         try:
-            result, errs = EVIL_P.communicate(text.strip().encode('utf-8'), timeout=10)
-        except Exception: # TimeoutExpired
-            EVIL_P.kill()
-            result, errs = EVIL_P.communicate()
-        result = result.strip().decode('utf-8', errors='replace')
-    return result
+            result = APP_P.stdout.readline().strip().decode('utf-8')
+        except BrokenPipeError:
+            checkappproc()
+            result = APP_P.stdout.readline().strip().decode('utf-8')
+        logging.debug('Got from APP_P: ' + result)
+        if result:
+            obj = json.loads(result)
+            if obj['exc']:
+                logging.error('Remote app server error.\n' + obj['exc'])
+            sargs = APP_TASK.get(obj['id'])
+            if sargs:
+                sendmsg(obj['ret'] or 'Nothing.', sargs[0], sargs[1])
+                del APP_TASK[obj['id']]
+            else:
+                logging.error('Task ID %s not found.' % obj['id'])
 
 def checkircconn():
     global ircconn
@@ -183,6 +178,28 @@ def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
         text = text.strip()
         if text.count('\n') < 2:
             ircconn.say(CFG['ircchannel'], text)
+
+def irc_forward(msg):
+    if not ircconn:
+        return
+    try:
+        checkircconn()
+        text = msg.get('text')
+        if text and msg['from']['id'] != CFG['ircbotid']:
+            if 'forward_from' in msg:
+                text = "Fwd %s: %s" % (dc_getufname(msg['forward_from']), text)
+            elif 'reply_to_message' in msg:
+                text = "%s: %s" % (dc_getufname(msg['reply_to_message']['from']), text)
+            text = text.split('\n')
+            for ln in text:
+                ircconn.say(CFG['ircchannel'], '[%s] %s' % (dc_getufname(msg['from']), ln))
+    except Exception:
+        logging.exception('Forward a message to IRC failed.')
+
+def async_irc_forward(msg):
+    thr = threading.Thread(target=irc_forward, args=(msg,))
+    thr.daemon = True
+    thr.start()
 
 ### DB import
 
@@ -255,9 +272,14 @@ def bot_api_noerr(method, **params):
         logging.exception('Async bot API failed.')
 
 def async_send(method, **params):
-    threading.Thread(target=bot_api_noerr, args=(method,), kwargs=params).run()
+    thr = threading.Thread(target=bot_api_noerr, args=(method,), kwargs=params)
+    thr.daemon = True
+    thr.start()
 
 def sendmsg(text, chat_id, reply_to_message_id=None):
+    if not text:
+        logging.warning('Empty message ignored: %s, %s' % (chat_id, reply_to_message_id))
+        return
     logging.info('sendMessage(%s): %s' % (len(text), text[:20]))
     if len(text) > 2000:
         text = text[:1999] + '…'
@@ -387,8 +409,9 @@ def command(text, chatid, replyid, msg):
             cmd = t[0][1:].lower().replace('@' + CFG['botname'], '')
             if cmd in COMMANDS:
                 if chatid > 0 or chatid == -CFG['groupid'] or cmd in PUBLIC:
-                    logging.info('Command: ' + repr(t))
-                    COMMANDS[cmd](' '.join(t[1:]).strip(), chatid, replyid, msg)
+                    expr = ' '.join(t[1:]).strip()
+                    logging.info('Command: %s %s' % (cmd, expr))
+                    COMMANDS[cmd](expr, chatid, replyid, msg)
             elif chatid > 0:
                 sendmsg('Invalid command. Send /help for help.', chatid, replyid)
         # 233333
@@ -401,10 +424,6 @@ def command(text, chatid, replyid, msg):
     except Exception:
         logging.exception('Excute command failed.')
 
-def async_command(text, chatid, replyid, msg):
-    thr = threading.Thread(target=command, args=(text, chatid, replyid, msg))
-    thr.run()
-
 def processmsg():
     d = MSG_Q.get()
     logging.debug('Msg arrived: %r' % d)
@@ -416,10 +435,12 @@ def processmsg():
         MSG_CACHE[msg['message_id']] = msg
         cls = classify(msg)
         logging.debug('Classified as: %s', cls)
+        if msg['chat']['id'] == -CFG['groupid'] and CFG.get('t2i'):
+            async_irc_forward(msg)
         if cls == 0:
-            async_command(msg['text'], msg['chat']['id'], msg['message_id'], msg)
             if msg['chat']['id'] == -CFG['groupid']:
                 logmsg(msg)
+            command(msg['text'], msg['chat']['id'], msg['message_id'], msg)
         elif cls == 1:
             logmsg(msg)
         elif cls == 2:
@@ -445,6 +466,14 @@ def db_getufname(uid):
     name, last = db_getuser(uid)[1:]
     if last:
         name += ' ' + last
+    return name
+
+def dc_getufname(user, maxlen=100):
+    name = user['first_name']
+    if 'last_name' in user:
+        name += ' ' + user['last_name']
+    if len(name) > maxlen:
+        name = name[:maxlen] + '…'
     return name
 
 @functools.lru_cache(maxsize=10)
@@ -494,6 +523,16 @@ def cmd_context(expr, chatid, replyid, msg):
         return
     typing(chatid)
     forwardmulti_t(range(mid - limit, mid + limit + 1), chatid, replyid)
+
+def cmd_quote(expr, chatid, replyid, msg):
+    '''/quote Send a today's random message.'''
+    typing(chatid)
+    sec = daystart()
+    msg = conn.execute('SELECT id FROM messages WHERE date >= ? AND date < ? ORDER BY RANDOM() LIMIT 1', (sec, sec + 86400)).fetchone()
+    if msg is None:
+        msg = conn.execute('SELECT id FROM messages ORDER BY RANDOM() LIMIT 1').fetchone()
+    #forwardmulti((msg[0]-1, msg[0], msg[0]+1), chatid, replyid)
+    forward(msg[0], chatid, replyid)
 
 def ellipsisresult(s, find, maxctx=50):
     if find:
@@ -621,12 +660,7 @@ def cmd_calc(expr, chatid, replyid, msg):
     '''/calc <expr> Calculate <expr>.'''
     # Too many bugs
     if expr:
-        r = fx233es.Evaluate(expr)
-        if r is not None or fx233es.rformat:
-            res = fx233es.PrintResult()
-            if len(res) > 200:
-                res = res[:200] + '...'
-            sendmsg(res or 'Nothing', chatid, replyid)
+        runapptask('calc', (expr,), (chatid, replyid))
     else:
         sendmsg('Syntax error. Usage: ' + cmd_calc.__doc__, chatid, replyid)
 
@@ -636,22 +670,29 @@ def cmd_py(expr, chatid, replyid, msg):
         if len(expr) > 1000:
             sendmsg('Expression too long.', chatid, replyid)
         else:
-            res = geteval(expr)
-            if len(res) > 500:
-                res = res[:500] + '...'
-            sendmsg(res or 'None or error occurred.', chatid, replyid)
+            runapptask('py', (expr,), (chatid, replyid))
+    else:
+        sendmsg('Syntax error. Usage: ' + cmd_py.__doc__, chatid, replyid)
+
+def cmd_bf(expr, chatid, replyid, msg):
+    '''/bf <expr> [|<input>] Evaluate Brainf*ck expression <expr> (with <input>).'''
+    if expr:
+        expr = expr.split('|', 1)
+        inpt = expr[1] if len(expr) > 1 else ''
+        runapptask('bf', (expr[0], inpt), (chatid, replyid))
+    else:
+        sendmsg('Syntax error. Usage: ' + cmd_bf.__doc__, chatid, replyid)
+
+def cmd_lisp(expr, chatid, replyid, msg):
+    '''/lisp <expr> Evaluate expression <expr> in a minimal set of Lisp.'''
+    if expr:
+        runapptask('lisp', (expr,), (chatid, replyid))
     else:
         sendmsg('Syntax error. Usage: ' + cmd_py.__doc__, chatid, replyid)
 
 def cmd_name(expr, chatid, replyid, msg):
     '''/name [pinyin] Get a Chinese name.'''
-    surnames, names = namemodel.processinput(expr, 10)
-    res = []
-    if surnames:
-        res.append('姓：' + ', '.join(surnames[:10]))
-    if names:
-        res.append('名：' + ', '.join(names[:10]))
-    sendmsg('\n'.join(res), chatid, replyid)
+    runapptask('name', (expr,), (chatid, replyid))
 
 def cmd_ime(expr, chatid, replyid, msg):
     '''/ime [pinyin] Simple Pinyin IME.'''
@@ -664,18 +705,7 @@ def cmd_ime(expr, chatid, replyid, msg):
     if not tinput:
         sendmsg('Syntax error. Usage: ' + cmd_ime.__doc__, chatid, replyid)
         return
-    res = zhconv.convert(simpleime.pinyininput(tinput), 'zh-hans')
-    sendmsg(res, chatid, replyid)
-
-def cmd_quote(expr, chatid, replyid, msg):
-    '''/quote Send a today's random message.'''
-    typing(chatid)
-    sec = daystart()
-    msg = conn.execute('SELECT id FROM messages WHERE date >= ? AND date < ? ORDER BY RANDOM() LIMIT 1', (sec, sec + 86400)).fetchone()
-    if msg is None:
-        msg = conn.execute('SELECT id FROM messages ORDER BY RANDOM() LIMIT 1').fetchone()
-    #forwardmulti((msg[0]-1, msg[0], msg[0]+1), chatid, replyid)
-    forward(msg[0], chatid, replyid)
+    runapptask('ime', (tinput,), (chatid, replyid))
 
 def cmd_wyw(expr, chatid, replyid, msg):
     '''/wyw [c|m] <something> Translate something to or from classical Chinese.'''
@@ -691,30 +721,18 @@ def cmd_wyw(expr, chatid, replyid, msg):
     if 'reply_to_message' in msg:
         tinput = msg['reply_to_message'].get('text', '')
     tinput = (expr or tinput).strip()
-    if len(tinput) > 800:
-        tinput = tinput[:800] + '……'
+    if len(tinput) > 1000:
+        tinput = tinput[:1000] + '……'
     if not tinput:
         sendmsg('Syntax error. Usage: ' + cmd_wyw.__doc__, chatid, replyid)
         return
     typing(chatid)
-    if lang is None:
-        cscore, mscore = zhutil.calctxtstat(tinput)
-        if cscore == mscore:
-            lang = None
-        elif zhutil.checktxttype(cscore, mscore) == 'c':
-            lang = 'c2m'
-        else:
-            lang = 'm2c'
-    if lang:
-        tres = mosesproxy.translate(tinput, lang, 0, 0, 0)
-        sendmsg(tres, chatid, replyid)
-    else:
-        sendmsg(tinput, chatid, replyid)
+    runapptask('wyw', (tinput, lang), (chatid, replyid))
 
 def cmd_say(expr, chatid, replyid, msg):
     '''/say Say something interesting.'''
     typing(chatid)
-    sendmsg(SAY_Q.get() or 'ERROR_BRAIN_NOT_CONNECTED', chatid, replyid)
+    runapptask('say', (), (chatid, replyid))
 
 def cmd_reply(expr, chatid, replyid, msg):
     '''/reply [question] Reply to the conversation.'''
@@ -723,8 +741,7 @@ def cmd_reply(expr, chatid, replyid, msg):
     if 'reply_to_message' in msg:
         text = msg['reply_to_message'].get('text', '')
     text = (expr.strip() or text or ' '.join(t[0] for t in conn.execute("SELECT text FROM messages ORDER BY date DESC LIMIT 2").fetchall())).replace('\n', ' ')
-    r = getsayingbytext(text)
-    sendmsg(r or 'ERROR_BRAIN_CONNECT_FAILED', chatid, replyid)
+    runapptask('reply', (text,), (chatid, replyid))
 
 def cmd_echo(expr, chatid, replyid, msg):
     '''/echo Parrot back.'''
@@ -734,6 +751,16 @@ def cmd_echo(expr, chatid, replyid, msg):
         sendmsg(expr, chatid, replyid)
     else:
         sendmsg('ping', chatid, replyid)
+
+def cmd_t2i(expr, chatid, replyid, msg):
+    global CFG
+    if msg['chat']['id'] == -CFG['groupid']:
+        if CFG.get('t2i'):
+            CFG['t2i'] = False
+            sendmsg('Telegram to IRC forwarding disabled.', chatid, replyid)
+        else:
+            CFG['t2i'] = True
+            sendmsg('Telegram to IRC forwarding enabled.', chatid, replyid)
 
 def cmd__cmd(expr, chatid, replyid, msg):
     global SAY_P
@@ -767,7 +794,7 @@ def cmd__welcome(expr, chatid, replyid, msg):
         return
     usr = msg["new_chat_participant"]
     USER_CACHE[usr["id"]] = (usr.get("username"), usr.get("first_name"), usr.get("last_name"))
-    sendmsg('欢迎 %s 加入本群！' % db_getufname(usr["id"]), chatid, replyid)
+    sendmsg('欢迎 %s 加入本群！' % dc_getufname(usr), chatid, replyid)
 
 def cmd_233(expr, chatid, replyid, msg):
     try:
@@ -811,6 +838,8 @@ COMMANDS = collections.OrderedDict((
 #('calc', cmd_calc),
 ('calc', cmd_py),
 ('py', cmd_py),
+('bf', cmd_bf),
+('lisp', cmd_lisp),
 ('name', cmd_name),
 ('ime', cmd_ime),
 ('quote', cmd_quote),
@@ -818,6 +847,7 @@ COMMANDS = collections.OrderedDict((
 ('say', cmd_say),
 ('reply', cmd_reply),
 ('echo', cmd_echo),
+('t2i', cmd_t2i),
 ('hello', cmd_hello),
 ('233', cmd_233),
 ('start', cmd_start),
@@ -827,6 +857,8 @@ COMMANDS = collections.OrderedDict((
 
 PUBLIC = set((
 'py',
+'bf',
+'lisp',
 'name',
 'ime',
 'wyw',
@@ -853,23 +885,18 @@ URL = 'https://api.telegram.org/bot%s/' % CFG['token']
 #importupdates(OFFSET, 2000)
 
 MSG_Q = queue.Queue()
-SAY_Q = queue.Queue(maxsize=50)
-SAY_LCK = threading.Lock()
-EVIL_LCK = threading.Lock()
-
-SAY_CMD = ('python3', 'say.py', 'chat.binlm', 'chatdict.txt', 'context.pkl')
-SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
-
-EVIL_CMD = ('python', 'seccomp.py')
-EVIL_P = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd='vendor')
+APP_TASK = {}
+APP_LCK = threading.Lock()
+APP_CMD = ('python3', 'appserve.py')
+APP_P = subprocess.Popen(APP_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
 pollthr = threading.Thread(target=getupdates)
 pollthr.daemon = True
 pollthr.start()
 
-saythr = threading.Thread(target=getsaying)
-saythr.daemon = True
-saythr.start()
+appthr = threading.Thread(target=getappresult)
+appthr.daemon = True
+appthr.start()
 
 ircconn = None
 if 'ircserver' in CFG:
@@ -879,9 +906,6 @@ if 'ircserver' in CFG:
     ircthr.start()
 
 # fx233es = fparser.Parser(numtype='decimal')
-
-namemodel = chinesename.NameModel('vendor/namemodel.m')
-simpleime.loaddict('vendor/pyindex.dawg', 'vendor/essay.dawg')
 
 logging.info('Satellite launched.')
 
@@ -895,6 +919,7 @@ try:
 finally:
     conn.execute('REPLACE INTO config (id, val) VALUES (0, ?)', (OFFSET,))
     conn.execute('REPLACE INTO config (id, val) VALUES (1, ?)', (IRCOFFSET,))
+    json.dump(CFG, open('config.json', 'w'), sort_keys=True, indent=4)
     db.commit()
-    SAY_P.terminate()
+    APP_P.terminate()
     logging.info('Shut down cleanly.')
