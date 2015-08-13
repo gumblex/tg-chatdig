@@ -147,7 +147,7 @@ def getappresult():
                 logging.error('Remote app server error.\n' + obj['exc'])
             sargs = APP_TASK.get(obj['id'])
             if sargs:
-                sendmsg(obj['ret'].strip() or 'Empty.', sargs[0], sargs[1])
+                sendmsg(obj['ret'] or 'Empty.', sargs[0], sargs[1])
                 del APP_TASK[obj['id']]
             else:
                 logging.error('Task ID %s not found.' % obj['id'])
@@ -301,7 +301,7 @@ def sendmsg(text, chat_id, reply_to_message_id=None):
         LOG_Q.put(m)
         irc_send(text, reply_to_message_id=reply_to_message_id)
 
-@async_func
+#@async_func
 def forward(message_id, chat_id, reply_to_message_id=None):
     global LOG_Q
     logging.info('forwardMessage: %r' % message_id)
@@ -317,7 +317,7 @@ def forward(message_id, chat_id, reply_to_message_id=None):
         LOG_Q.put(r)
         irc_send(forward_message_id=message_id)
 
-@async_func
+#@async_func
 def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
     failed = False
     message_ids = tuple(message_ids)
@@ -336,7 +336,7 @@ def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
         for message_id in message_ids:
             irc_send(forward_message_id=message_id)
 
-@async_func
+#@async_func
 def forwardmulti_t(message_ids, chat_id, reply_to_message_id=None):
     text = []
     for message_id in message_ids:
@@ -426,7 +426,7 @@ def command(text, chatid, replyid, msg):
             if cmd in COMMANDS:
                 if chatid > 0 or chatid == -CFG['groupid'] or cmd in PUBLIC:
                     expr = ' '.join(t[1:]).strip()
-                    logging.info('Command: /%s %s' % (cmd, expr))
+                    logging.info('Command: /%s %s' % (cmd, expr[:20]))
                     COMMANDS[cmd](expr, chatid, replyid, msg)
             elif chatid > 0:
                 sendmsg('Invalid command. Send /help for help.', chatid, replyid)
@@ -727,6 +727,27 @@ def cmd_ime(expr, chatid, replyid, msg):
         return
     runapptask('ime', (tinput,), (chatid, replyid))
 
+def cmd_cut(expr, chatid, replyid, msg):
+    '''/cut [c|m] <something> Segment <something>.'''
+    if expr[:2].strip() == 'c':
+        lang = 'c'
+        expr = expr[2:]
+    elif expr[:2].strip() == 'm':
+        lang = 'm'
+        expr = expr[2:]
+    else:
+        lang = None
+    tinput = ''
+    if 'reply_to_message' in msg:
+        tinput = msg['reply_to_message'].get('text', '')
+    tinput = (expr or tinput).strip()
+    if len(tinput) > 1000:
+        tinput = tinput[:1000] + '……'
+    if not tinput:
+        sendmsg('Syntax error. Usage: ' + cmd_cut.__doc__, chatid, replyid)
+        return
+    runapptask('cut', (tinput, lang), (chatid, replyid))
+
 def cmd_wyw(expr, chatid, replyid, msg):
     '''/wyw [c|m] <something> Translate something to or from classical Chinese.'''
     if expr[:2].strip() == 'c':
@@ -783,13 +804,13 @@ def cmd_t2i(expr, chatid, replyid, msg):
             sendmsg('Telegram to IRC forwarding enabled.', chatid, replyid)
 
 def cmd__cmd(expr, chatid, replyid, msg):
-    global SAY_P
+    global SAY_P, APP_P
     if chatid < 0:
         return
-    if expr == 'reload_model':
-        SAY_P.terminate()
-        SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
-        sendmsg('LM reloaded.', chatid, replyid)
+    if expr == 'killserver':
+        APP_P.terminate()
+        APP_P = subprocess.Popen(APP_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        sendmsg('Server killed.', chatid, replyid)
     elif expr == 'commit':
         db.commit()
         sendmsg('DB committed.', chatid, replyid)
@@ -866,6 +887,7 @@ COMMANDS = collections.OrderedDict((
 ('ime', cmd_ime),
 ('quote', cmd_quote),
 ('wyw', cmd_wyw),
+('cut', cmd_cut),
 ('say', cmd_say),
 ('reply', cmd_reply),
 ('echo', cmd_echo),
@@ -884,6 +906,7 @@ PUBLIC = set((
 'name',
 'ime',
 'wyw',
+'cut',
 'say',
 'reply',
 'echo',

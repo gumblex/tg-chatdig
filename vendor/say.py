@@ -109,6 +109,11 @@ ctx = pickle.load(open(sys.argv[3], 'rb'))
 
 jieba.initialize()
 
+# Uglfied one-liner version
+
+# ife = lambda x,a,b: a if x else b
+# print(generate_word(LM, order, ife(not ln, voc, (lambda a,b: b or a)(voc, list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(ctx.__getitem__, filter(None, map(indexword, frozenset(ife(len(ln) < 80, jieba.cut(ln, HMM=False), jieba.analyse.textrank(ln)))))))))))))))
+
 for ln in sys.stdin:
     ln = ln.strip()
     if ln:
