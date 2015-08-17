@@ -99,7 +99,7 @@ def getupdates():
     global OFFSET, MSG_Q
     while 1:
         try:
-            updates = bot_api('getUpdates', offset=OFFSET)
+            updates = bot_api('getUpdates', offset=OFFSET, timeout=5)
         except Exception as ex:
             logging.exception('Get updates failed.')
             continue
@@ -108,7 +108,7 @@ def getupdates():
             OFFSET = updates[-1]["update_id"] + 1
             for upd in updates:
                 MSG_Q.put(upd)
-        time.sleep(.1)
+        time.sleep(.2)
 
 def checkappproc():
     global APP_P
@@ -433,7 +433,7 @@ def command(text, chatid, replyid, msg):
         # 233333
         #elif all(n.isdigit() for n in t):
             #COMMANDS['m'](' '.join(t), chatid, replyid, msg)
-        elif chatid != -CFG['groupid']:
+        elif chatid > 0:
             t = ' '.join(t).strip()
             logging.info('Reply: ' + t[:20])
             COMMANDS['reply'](t, chatid, replyid, msg)
@@ -714,6 +714,14 @@ def cmd_name(expr, chatid, replyid, msg):
     '''/name [pinyin] Get a Chinese name.'''
     runapptask('name', (expr,), (chatid, replyid))
 
+def cmd_cc(expr, chatid, replyid, msg):
+    '''/cc <Chinese> Simplified-Traditional Chinese conversion.'''
+    tinput = ''
+    if 'reply_to_message' in msg:
+        tinput = msg['reply_to_message'].get('text', '')
+    tinput = (expr or tinput).strip()
+    runapptask('cc', (tinput,), (chatid, replyid))
+
 def cmd_ime(expr, chatid, replyid, msg):
     '''/ime [pinyin] Simple Pinyin IME.'''
     tinput = ''
@@ -773,7 +781,10 @@ def cmd_wyw(expr, chatid, replyid, msg):
 def cmd_say(expr, chatid, replyid, msg):
     '''/say Say something interesting.'''
     typing(chatid)
-    runapptask('say', (), (chatid, replyid))
+    if expr:
+        runapptask('reply', (expr,), (chatid, replyid))
+    else:
+        runapptask('say', (), (chatid, replyid))
 
 def cmd_reply(expr, chatid, replyid, msg):
     '''/reply [question] Reply to the conversation.'''
@@ -812,6 +823,11 @@ def cmd__cmd(expr, chatid, replyid, msg):
         APP_P = subprocess.Popen(APP_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         sendmsg('Server killed.', chatid, replyid)
     elif expr == 'commit':
+        while 1:
+            try:
+                logmsg(LOG_Q.get_nowait())
+            except queue.Empty:
+                break
         db.commit()
         sendmsg('DB committed.', chatid, replyid)
     #elif expr == 'raiseex':  # For debug
@@ -885,6 +901,7 @@ COMMANDS = collections.OrderedDict((
 ('lisp', cmd_lisp),
 ('name', cmd_name),
 ('ime', cmd_ime),
+('cc', cmd_cc),
 ('quote', cmd_quote),
 ('wyw', cmd_wyw),
 ('cut', cmd_cut),
@@ -905,6 +922,7 @@ PUBLIC = set((
 'lisp',
 'name',
 'ime',
+'cc',
 'wyw',
 'cut',
 'say',

@@ -41,13 +41,14 @@ def getsaying():
 def getsayingbytext(text=''):
     global SAY_P
     with SAY_LCK:
+        text = ' '.join(mosesproxy.cut(text, HMM=False)[:60]).strip().encode('utf-8') + b'\n'
         try:
-            SAY_P.stdin.write(text.strip().encode('utf-8') + b'\n')
+            SAY_P.stdin.write(text)
             SAY_P.stdin.flush()
             say = SAY_P.stdout.readline().strip().decode('utf-8')
         except BrokenPipeError:
             SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
-            SAY_P.stdin.write(text.strip().encode('utf-8') + b'\n')
+            SAY_P.stdin.write(text)
             SAY_P.stdin.flush()
             say = SAY_P.stdout.readline().strip().decode('utf-8')
     return say
@@ -131,6 +132,12 @@ def cmd_name(expr):
 def cmd_ime(expr):
     return zhconv.convert(simpleime.pinyininput(expr.lower()), 'zh-hans')
 
+def cmd_cc(expr):
+    if zhconv.issimp(expr):
+        return zhconv.convert(expr, 'zh-hant')
+    else:
+        return zhconv.convert(expr, 'zh-hans')
+
 def cmd_cut(tinput, lang):
     if lang == 'c':
         return ' '.join(mosesproxy.jiebazhc.cut(tinput, HMM=False))
@@ -164,6 +171,7 @@ COMMANDS = collections.OrderedDict((
 ('lisp', cmd_lisp),
 ('name', cmd_name),
 ('ime', cmd_ime),
+('cc', cmd_cc),
 ('wyw', cmd_wyw),
 ('cut', cmd_cut),
 ('say', cmd_say),

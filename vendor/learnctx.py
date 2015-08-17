@@ -4,6 +4,7 @@
 import sys
 import jieba
 import pickle
+import struct
 import functools
 import collections
 
@@ -26,10 +27,12 @@ def indexword(word):
     except ValueError:
         return None
 
+packvals = lambda values: struct.pack('>' + 'H'*len(values), *values)
+
 wd = collections.defaultdict(set)
 for ln in sys.stdin:
     ln = set(filter(None, (indexword(word) for word in jieba.cut(ln.strip()))))
     for word in ln:
         wd[word] |= ln
 
-pickle.dump(tuple(tuple(sorted(wd.get(k, ()))) for k in range(len(wl))), open('context.pkl', 'wb'))
+pickle.dump(tuple(packvals(sorted(wd.get(k, ()))) for k in range(len(wl))), open('context.pkl', 'wb'))

@@ -4,13 +4,12 @@
 import re
 import sys
 import kenlm
-import jieba
 import pangu
 import pickle
+import struct
 import random
 import itertools
 import functools
-import jieba.analyse
 
 RE_UCJK = re.compile(
     '([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U0001F000-\U0001F8AD\U00020000-\U0002A6D6]+)')
@@ -97,29 +96,22 @@ def generate_word(lm, order, ctxvoc):
             break
     return pangu.spacing(''.join(joinword(out)))
 
-
-def getctxvoc(ln):
-    frozenset(itertools.chain.from_iterable(map(ctx.__getitem__, filter(None, (indexword(w) for w in frozenset(jieba.cut(ln, HMM=False)))))))
-
+unpackvals = lambda b: struct.unpack('>' + 'H'*(len(b)//2), b)
 
 LM = kenlm.LanguageModel(sys.argv[1])
 order = LM.order
 voc = loaddict(sys.argv[2])
 ctx = pickle.load(open(sys.argv[3], 'rb'))
 
-jieba.initialize()
-
 # Uglfied one-liner version
 
 # ife = lambda x,a,b: a if x else b
-# print(generate_word(LM, order, ife(not ln, voc, (lambda a,b: b or a)(voc, list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(ctx.__getitem__, filter(None, map(indexword, frozenset(ife(len(ln) < 80, jieba.cut(ln, HMM=False), jieba.analyse.textrank(ln)))))))))))))))
+# print(generate_word(LM, order, ife(not ln, voc, (lambda a,b: b or a)(voc, list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(unpackvals, map(ctx.__getitem__, filter(None, map(indexword, frozenset(ln.split()))))))))))))))
 
 for ln in sys.stdin:
     ln = ln.strip()
     if ln:
-        if len(ln) > 80:
-            ln = ' '.join(jieba.analyse.textrank(ln))
-        ctxvoc = list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(ctx.__getitem__, filter(None, map(indexword, frozenset(jieba.cut(ln, HMM=False)))))))))) or voc
+        ctxvoc = list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(unpackvals, map(ctx.__getitem__, filter(None, map(indexword, frozenset(ln.split())))))))))) or voc
         print(generate_word(LM, order, ctxvoc))
     else:
         print(generate_word(LM, order, voc))
