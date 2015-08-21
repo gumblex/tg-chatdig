@@ -1,6 +1,7 @@
 import os
 import re
 import itertools
+from zhconv import convert as zhconv
 
 halfwidth = frozenset('!(),:;?')
 fullwidth = frozenset(itertools.chain(
@@ -31,8 +32,10 @@ tailpunct = ('''!),-.:;?]}¢·ˇˉ―‖’”•′■□△○●'''
 headpunct = ('''([`{£¥‘“〈《「『【〔〖〝'''
              '''︵︷︹︻︽︿﹁﹃﹙﹛﹝（［｛￡￥''') + whitespace
 
-openbrckt = '([{‘“〈《「『【〔〖〝︵︷︹︻︽︿﹁﹃﹙﹛﹝（［｛'
-clozbrckt = ')]}’”〉》」』】〕〗〞︶︸︺︼︾﹀﹂﹄﹚﹜﹞）］｝'
+openbrckt = ('([{（［｛⦅〚⦃“‘‹«「〈《【〔⦗『〖〘｢⟦⟨⟪⟮⟬⌈⌊⦇⦉❛❝❨❪❴❬❮❰❲'
+             '⏜⎴⏞〝︵⏠﹁﹃︹︻︗︿︽﹇︷〈⦑⧼﹙﹛﹝⁽₍⦋⦍⦏⁅⸢⸤⟅⦓⦕⸦⸨｟⧘⧚⸜⸌⸂⸄⸉᚛༺༼')
+clozbrckt = (')]}）］｝⦆〛⦄”’›»」〉》】〕⦘』〗〙｣⟧⟩⟫⟯⟭⌉⌋⦈⦊❜❞❩❫❵❭❯❱❳'
+             '⏝⎵⏟〞︶⏡﹂﹄︺︼︘﹀︾﹈︸〉⦒⧽﹚﹜﹞⁾₎⦌⦎⦐⁆⸣⸥⟆⦔⦖⸧⸩｠⧙⧛⸝⸍⸃⸅⸊᚜༻༽')
 
 ucjk = frozenset(itertools.chain(
     range(0x1100, 0x11FF + 1),

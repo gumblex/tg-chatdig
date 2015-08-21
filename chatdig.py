@@ -187,13 +187,19 @@ def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
         if reply_to_message_id:
             m = MSG_CACHE.get(reply_to_message_id, {})
             if 'from' in m:
-                text = "%s: %s" % (db_getufname(m['from']['id']), text)
+                src = db_getufname(m['from']['id'])[:20]
+                if m['from']['id'] in (CFG['botid'], CFG['ircbotid']):
+                    rtxt = m.get('text', '')
+                    index = rtxt.find('] ')
+                    if index >= 0:
+                        src = rtxt[1:index]
+                text = "%s: %s" % (src, text)
         elif forward_message_id:
             m = db_getmsg(forward_message_id)
             if m:
-                text = "Fwd %s: %s" % (db_getufname(m[1]), m[2])
+                text = "Fwd %s: %s" % (db_getufname(m[1])[:20], m[2])
         text = text.strip()
-        if text.count('\n') < 2:
+        if text.count('\n') < 1:
             ircconn.say(CFG['ircchannel'], text)
 
 @async_func
@@ -205,12 +211,12 @@ def irc_forward(msg):
         text = msg.get('text')
         if text and msg['from']['id'] != CFG['ircbotid']:
             if 'forward_from' in msg:
-                text = "Fwd %s: %s" % (dc_getufname(msg['forward_from']), text)
+                text = "Fwd %s: %s" % (dc_getufname(msg['forward_from'])[:20], text)
             elif 'reply_to_message' in msg:
-                text = "%s: %s" % (dc_getufname(msg['reply_to_message']['from']), text)
+                text = "%s: %s" % (dc_getufname(msg['reply_to_message']['from'])[:20], text)
             text = text.split('\n')
             for ln in text:
-                ircconn.say(CFG['ircchannel'], '[%s] %s' % (dc_getufname(msg['from']), ln))
+                ircconn.say(CFG['ircchannel'], '[%s] %s' % (dc_getufname(msg['from'])[:20], ln))
     except Exception:
         logging.exception('Forward a message to IRC failed.')
 
@@ -263,7 +269,7 @@ def change_session():
     logging.warning('Session changed.')
 
 def bot_api(method, **params):
-    for att in range(2):
+    for att in range(3):
         try:
             req = HSession.get(URL + method, params=params)
             retjson = req.content
@@ -271,6 +277,7 @@ def bot_api(method, **params):
             break
         except Exception as ex:
             if att < 1:
+                time.sleep((att+1) * 2)
                 change_session()
             else:
                 raise ex
@@ -385,7 +392,8 @@ def classify(msg):
             Replies to the bot's own messages
 
     - Group message (1)
-    - new_chat_participant (2)
+    - IRC message (2)
+    - new_chat_participant (3)
     - Ignored message (10)
     - Invalid calling (-1)
     '''
@@ -402,13 +410,18 @@ def classify(msg):
             if reply and reply['from']['id'] == CFG['botid']:
                 return 0
 
+    # If not enabled, there won't be this kind of msg
+    ircu = msg.get('_ircuser')
+    if ircu and ircu != CFG['ircnick']:
+        return 2
+
     if 'title' in chat:
         # Group chat
         if chat['id'] == -CFG['groupid']:
             if msg['from']['id'] == CFG['botid']:
                 return 10
             elif 'new_chat_participant' in msg:
-                return 2
+                return 3
             else:
                 return 1
         else:
@@ -459,7 +472,13 @@ def processmsg():
             command(msg['text'], msg['chat']['id'], msg['message_id'], msg)
         elif cls == 1:
             logmsg(msg)
+            if CFG.get('autoclose') and 'forward_from' not in msg:
+                autoclose(msg)
         elif cls == 2:
+            logmsg(msg)
+            if CFG.get('i2t'):
+                sendmsg('[%s] %s' % (msg['_ircuser'], msg['text']), msg['chat']['id'])
+        elif cls == 3:
             logmsg(msg)
             cmd__welcome('', msg['chat']['id'], msg['message_id'], msg)
         elif cls == -1:
@@ -468,6 +487,27 @@ def processmsg():
             logmsg(LOG_Q.get_nowait())
         except queue.Empty:
             pass
+
+def autoclose(msg):
+    openbrckt = ('([{（［｛⦅〚⦃“‘‹«「〈《【〔⦗『〖〘｢⟦⟨⟪⟮⟬⌈⌊⦇⦉❛❝❨❪❴❬❮❰❲'
+                 '⏜⎴⏞〝︵⏠﹁﹃︹︻︗︿︽﹇︷〈⦑⧼﹙﹛﹝⁽₍⦋⦍⦏⁅⸢⸤⟅⦓⦕⸦⸨｟⧘⧚⸜⸌⸂⸄⸉᚛༺༼')
+    clozbrckt = (')]}）］｝⦆〛⦄”’›»」〉》】〕⦘』〗〙｣⟧⟩⟫⟯⟭⌉⌋⦈⦊❜❞❩❫❵❭❯❱❳'
+                 '⏝⎵⏟〞︶⏡﹂﹄︺︼︘﹀︾﹈︸〉⦒⧽﹚﹜﹞⁾₎⦌⦎⦐⁆⸣⸥⟆⦔⦖⸧⸩｠⧙⧛⸝⸍⸃⸅⸊᚜༻༽')
+    stack = []
+    for ch in msg.get('text', ''):
+        index = openbrckt.find(ch)
+        if index >= 0:
+            stack.append(index)
+            continue
+        index = clozbrckt.find(ch)
+        if index >= 0:
+            if stack and stack[-1] == index:
+                stack.pop()
+    closed = ''.join(reversed(tuple(map(clozbrckt.__getitem__, stack))))
+    if closed:
+        if len(closed) > 20:
+            closed = closed[:20] + '…'
+        sendmsg(closed, msg['chat']['id'], msg['message_id'])
 
 def db_adduser(d):
     user = (d['id'], d.get('username'), d.get('first_name'), d.get('last_name'))
@@ -788,6 +828,8 @@ def cmd_say(expr, chatid, replyid, msg):
 
 def cmd_reply(expr, chatid, replyid, msg):
     '''/reply [question] Reply to the conversation.'''
+    if 'forward_from' in msg and msg['chat']['id'] < 0:
+        return
     typing(chatid)
     text = ''
     if 'reply_to_message' in msg:
@@ -804,6 +846,27 @@ def cmd_echo(expr, chatid, replyid, msg):
     else:
         sendmsg('ping', chatid, replyid)
 
+def cmd_do(expr, chatid, replyid, msg):
+    actions = {
+        'shrug': '¯\\_(ツ)_/¯',
+        'lenny': '( ͡° ͜ʖ ͡°)',
+        'flip': '（╯°□°）╯︵ ┻━┻',
+        'homo': '┌（┌　＾o＾）┐',
+        'look': 'ಠ_ಠ',
+        'boom': '💥',
+        'tweet': '🐦',
+        'blink': '👁',
+        'see-no-evil': '🙈',
+        'hear-no-evil': '🙉',
+        'speak-no-evil': '🙊',
+        'however': ('不要怪我们没有警告过你\n我们都有不顺利的时候\n'
+                    'Something happened\n这真是让人尴尬\n'
+                    '请坐和放宽，滚回以前的版本\n这就是你的人生\n是的，你的人生'),
+        '': 'Something happened.'
+    }
+    res = actions.get(expr)
+    sendmsg(res or 'Something happened.', chatid, replyid)
+
 def cmd_t2i(expr, chatid, replyid, msg):
     global CFG
     if msg['chat']['id'] == -CFG['groupid']:
@@ -813,6 +876,26 @@ def cmd_t2i(expr, chatid, replyid, msg):
         else:
             CFG['t2i'] = True
             sendmsg('Telegram to IRC forwarding enabled.', chatid, replyid)
+
+def cmd_i2t(expr, chatid, replyid, msg):
+    global CFG
+    if msg['chat']['id'] == -CFG['groupid']:
+        if CFG.get('i2t'):
+            CFG['i2t'] = False
+            sendmsg('IRC to Telegram forwarding disabled.', chatid, replyid)
+        else:
+            CFG['i2t'] = True
+            sendmsg('IRC to Telegram forwarding enabled.', chatid, replyid)
+
+def cmd_autoclose(expr, chatid, replyid, msg):
+    global CFG
+    if msg['chat']['id'] == -CFG['groupid']:
+        if CFG.get('autoclose'):
+            CFG['autoclose'] = False
+            sendmsg('Auto closing brackets disabled.', chatid, replyid)
+        else:
+            CFG['autoclose'] = True
+            sendmsg('Auto closing brackets enabled.', chatid, replyid)
 
 def cmd__cmd(expr, chatid, replyid, msg):
     global SAY_P, APP_P
@@ -908,7 +991,10 @@ COMMANDS = collections.OrderedDict((
 ('say', cmd_say),
 ('reply', cmd_reply),
 ('echo', cmd_echo),
+('do', cmd_do),
 ('t2i', cmd_t2i),
+('i2t', cmd_i2t),
+('autoclose', cmd_autoclose),
 ('hello', cmd_hello),
 ('233', cmd_233),
 ('start', cmd_start),
@@ -928,6 +1014,7 @@ PUBLIC = set((
 'say',
 'reply',
 'echo',
+'do',
 '233',
 'start',
 'help'
