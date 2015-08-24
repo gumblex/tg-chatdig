@@ -41,7 +41,7 @@ def getsaying():
 def getsayingbytext(text=''):
     global SAY_P
     with SAY_LCK:
-        text = ' '.join(mosesproxy.cut(text, HMM=False)[:60]).strip().encode('utf-8') + b'\n'
+        text = ' '.join(mosesproxy.cut(zhconv.convert(text, 'zh-hans'), HMM=False)[:60]).strip().encode('utf-8') + b'\n'
         try:
             SAY_P.stdin.write(text)
             SAY_P.stdin.flush()

@@ -8,6 +8,7 @@ import math
 import time
 import json
 import queue
+import signal
 import random
 import logging
 import sqlite3
@@ -472,8 +473,6 @@ def processmsg():
             command(msg['text'], msg['chat']['id'], msg['message_id'], msg)
         elif cls == 1:
             logmsg(msg)
-            if CFG.get('autoclose') and 'forward_from' not in msg:
-                autoclose(msg)
         elif cls == 2:
             logmsg(msg)
             if CFG.get('i2t'):
@@ -483,6 +482,8 @@ def processmsg():
             cmd__welcome('', msg['chat']['id'], msg['message_id'], msg)
         elif cls == -1:
             sendmsg('Wrong usage', msg['chat']['id'], msg['message_id'])
+        if cls in (1, 2) and CFG.get('autoclose') and 'forward_from' not in msg:
+            autoclose(msg)
         try:
             logmsg(LOG_Q.get_nowait())
         except queue.Empty:
@@ -708,9 +709,9 @@ def cmd_stat(expr, chatid, replyid, msg):
     ctr = collections.Counter(i[0] for i in r)
     mcomm = ctr.most_common(5)
     count = len(r)
-    msg = ['在最近%s内有 %s 条消息，一分钟 %.2f 条。' % (timestr, count, count/minutes)]
+    msg = ['在最近%s内有 %s 条消息，平均每分钟 %.2f 条。' % (timestr, count, count/minutes)]
     msg.extend('%s: %s 条，%.2f%%' % (db_getufname(k), v, v/count*100) for k, v in mcomm)
-    msg.append('其他用户 %s 条，人均 %.2f 条' % (len(r) - sum(v for k, v in mcomm), count / len(ctr)))
+    msg.append('其他用户 %s 条，人均 %.2f 条' % (count - sum(v for k, v in mcomm), count / len(ctr)))
     sendmsg('\n'.join(msg), chatid, replyid)
 
 def cmd_digest(expr, chatid, replyid, msg):
@@ -847,25 +848,30 @@ def cmd_echo(expr, chatid, replyid, msg):
         sendmsg('ping', chatid, replyid)
 
 def cmd_do(expr, chatid, replyid, msg):
-    actions = {
-        'shrug': '¯\\_(ツ)_/¯',
-        'lenny': '( ͡° ͜ʖ ͡°)',
-        'flip': '（╯°□°）╯︵ ┻━┻',
-        'homo': '┌（┌　＾o＾）┐',
-        'look': 'ಠ_ಠ',
-        'boom': '💥',
-        'tweet': '🐦',
-        'blink': '👁',
-        'see-no-evil': '🙈',
-        'hear-no-evil': '🙉',
-        'speak-no-evil': '🙊',
-        'however': ('不要怪我们没有警告过你\n我们都有不顺利的时候\n'
-                    'Something happened\n这真是让人尴尬\n'
-                    '请坐和放宽，滚回以前的版本\n这就是你的人生\n是的，你的人生'),
-        '': 'Something happened.'
-    }
+    actions = collections.OrderedDict((
+        ('shrug', '¯\\_(ツ)_/¯'),
+        ('lenny', '( ͡° ͜ʖ ͡°)'),
+        ('flip', '（╯°□°）╯︵ ┻━┻'),
+        ('homo', '┌（┌　＾o＾）┐'),
+        ('look', 'ಠ_ಠ'),
+        ('boom', '💥'),
+        ('tweet', '🐦'),
+        ('blink', '👁'),
+        ('see-no-evil', '🙈'),
+        ('hear-no-evil', '🙉'),
+        ('speak-no-evil', '🙊'),
+        ('however', ('不要怪我们没有警告过你\n我们都有不顺利的时候\n'
+                     'Something happened\n这真是让人尴尬\n'
+                     '请坐和放宽，滚回以前的版本\n这就是你的人生\n是的，你的人生'))
+    ))
+    expr = expr.lower()
     res = actions.get(expr)
-    sendmsg(res or 'Something happened.', chatid, replyid)
+    if res:
+        sendmsg(res, chatid, replyid)
+    elif expr == 'help':
+        sendmsg(', '.join(actions.keys()), chatid, replyid)
+    else:
+        sendmsg('Something happened.', chatid, replyid)
 
 def cmd_t2i(expr, chatid, replyid, msg):
     global CFG
@@ -912,7 +918,7 @@ def cmd__cmd(expr, chatid, replyid, msg):
             except queue.Empty:
                 break
         db.commit()
-        sendmsg('DB committed.', chatid, replyid)
+        sendmsg('DB committed upon user request.', chatid, replyid)
     #elif expr == 'raiseex':  # For debug
         #async_func(_raise_ex)(Exception('/_cmd raiseex'))
     else:
@@ -966,6 +972,9 @@ def cmd_help(expr, chatid, replyid, msg):
     else:
         sendmsg('\n'.join(uniq(cmd.__doc__ for cmdname, cmd in COMMANDS.items() if cmd.__doc__ and cmdname in PUBLIC)), chatid, replyid)
 
+def sig_commit(signum, frame):
+    db.commit()
+    logging.info('DB committed upon signal %s' % signum)
 
 # should document usage in docstrings
 COMMANDS = collections.OrderedDict((
@@ -1033,6 +1042,8 @@ URL = 'https://api.telegram.org/bot%s/' % CFG['token']
 
 #importdb('telegram-history.db')
 #importupdates(OFFSET, 2000)
+
+signal.signal(signal.SIGUSR1, sig_commit)
 
 MSG_Q = queue.Queue()
 LOG_Q = queue.Queue()
