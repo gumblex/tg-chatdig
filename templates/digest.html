@@ -219,6 +219,9 @@ section {
     margin: 1em .1em;
     word-wrap: break-word;
 }
+.num {
+    text-align: right;
+}
 #info {
     font-size: .9em;
     color: #233;
@@ -242,15 +245,16 @@ section {
 </header>
 <section id="flooder">
     <h2>水王榜</h2>
-    <table>
+    <table id="fldrank">
     <thead><tr><th>全名</th><th>消息</th><th>占比</th></tr></thead>
     <tbody>
     {% for u in info.flooder %}
-    <tr><td>{{ user(*u[0]) }}</td><td>{{ u[1] }}</td><td>{{ u[2] }}</td></tr>
+    <tr><td>{{ user(*u[0]) }}</td><td class="num">{{ u[1] }}</td><td class="num">{{ u[2] }}</td></tr>
     {% endfor %}
     <tr>
     <td>&lt;其他用户&gt;</td>
-    <td>{{ info.others[0] }}</td><td>{{ info.others[1] }}</td>
+    <td class="num">{{ info.others[0] }}</td>
+    <td class="num">{{ info.others[1] }}</td>
     </tr>
     </tbody>
     </table>

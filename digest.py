@@ -8,6 +8,7 @@ import time
 import math
 import json
 import sqlite3
+import operator
 import itertools
 import functools
 import collections
@@ -28,11 +29,20 @@ conn = db.cursor()
 USER_CACHE = {}
 
 re_url = re.compile(r"(^|[\s.:;?\-\]<\(])(https?://[-\w;/?:@&=+$\|\_.!~*\|'()\[\]%#,]+[\w/#](\(\))?)(?=$|[\s',\|\(\).:;?\-\[\]>\)])")
+_ig1 = operator.itemgetter(1)
 
 def daystart(sec=None):
     if not sec:
         sec = time.time()
     return int((sec + TIMEZONE) // 86400 * 86400 - TIMEZONE)
+
+def uniq(seq, key=None): # Dave Kirby
+    # Order preserving
+    seen = set()
+    if key:
+        return [x for x in seq if key(x) not in seen and not seen.add(key(x))]
+    else:
+        return [x for x in seq if x not in seen and not seen.add(x)]
 
 def db_getuser(uid):
     r = USER_CACHE.get(uid)
@@ -196,7 +206,16 @@ class DigestComposer:
         return sorted(results, key=len, reverse=True)
 
     def tfidf(self, term, text):
-        return text.count(term) / len(text) * math.log(len(self.msgs) / self.words.get(term, 0))
+        return text.count(term) / len(text) * math.log(len(self.msgs) / self.words.get(term, 1))
+
+    def tfidf_kwd(self, toks, topK=15):
+        toks = tuple(filter(lambda x: len(x) > 1, toks))
+        toklen = len(toks)
+        msglen = len(self.msgs)
+        return tuple(map(_ig1, sorted((-count / toklen * math.log(msglen / self.words.get(term, 1)), term) for term, count in collections.Counter(toks).items())))[:topK]
+
+    def tr_kwd(self, toks, topK=15):
+        return jieba.analyse.textrank(' '.join(toks), topK, False, ('n', 'ns', 'nr', 'vn', 'v', 'eng'))
 
     def cosinesimilarity(self, a, b):
         msga = self.msgtok[a]
@@ -256,15 +275,19 @@ class DigestComposer:
             if weight:
                 graph.add_edge(key[0], key[1], weight)
         del edges
-        return sorted(graph.rank().items(), key=lambda x: -x[1])
+        return sorted(graph.rank().items(), key=_ig1, reverse=True)
 
     def hotchunk(self):
         for chunk in self.chunker()[:5]:
-            kwds = jieba.analyse.textrank(' '.join(itertools.chain.from_iterable(self.msgtok[mid] for mid in chunk if self.classify(mid) < 2)), 15, False, ('n', 'ns', 'nr', 'vn', 'v', 'eng'))
+            kwds = self.tfidf_kwd(itertools.chain.from_iterable(self.msgtok[mid] for mid in chunk if self.classify(mid) < 2))
             hotmsg = []
-            for mid, weight in self.hotrank(chunk)[:10]:
+            ranked = uniq(uniq(map(lambda x: self.fwd_lookup.get(operator.itemgetter(3, 4)(self.msgs[x[0]]), x[0]), self.hotrank(chunk))), key=lambda x: self.msgs[x][1])
+            for mid in ranked[:10]:
                 msg = self.msgs[mid]
-                hotmsg.append((mid, msg[1], msg[0], db_getfirstname(msg[0], json.loads(msg[6] or '{}')), strftime('%H:%M:%S', msg[2])))
+                text = msg[1]
+                if len(text) > 233:
+                    text = text[:233] + '…'
+                hotmsg.append((mid, text, msg[0], db_getfirstname(msg[0], json.loads(msg[6] or '{}')), strftime('%H:%M:%S', msg[2])))
             yield (kwds, hotmsg)
 
     def tc_preprocess(self):
@@ -333,8 +356,10 @@ class DigestComposer:
         template = jinja2.Environment(loader=jinja2.FileSystemLoader('templates')).get_template(self.template)
         return template.render(**kvars)
 
+start = time.time()
 days = int(sys.argv[1]) if len(sys.argv) > 1 else 1
 
 dc = DigestComposer(time.time() - 86400 * days)
 dc.title = '##Orz 分部喵'
 print(dc.render())
+sys.stderr.write('Done in %.4gs.\n' % (time.time() - start))
