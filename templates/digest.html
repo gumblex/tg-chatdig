@@ -19,10 +19,9 @@ body,
 textarea,
 input,
 select {
-    background: 0;
-    border-radius: 0;
-    font-family: sans-serif;
-    margin: 0
+    font-family: Roboto, Arial, sans-serif;
+    font-size: 15px;
+    line-height:1.25em;
 }
 .smooth {
     transition: all .2s
@@ -188,7 +187,6 @@ input[type=text] {
     background: #def;
     border-left: 5px solid #59d
 }
-
 body {
     margin: .5em 2em;
     background-color: whitesmoke;
@@ -200,9 +198,7 @@ header {
 h1 {
     font-size: 1.5em;
     color: #0B3861;
-    display: inline;
     padding-top: .2em;
-    padding-left: .1em;
 }
 h2 {
     font-size: 1.25em;
@@ -215,14 +211,20 @@ p {
     padding-left: .5em;
     font-size: .8em;
     color: grey;
-}
-#titlechange ul {
-    padding-left: 1.2em;
+    display: inline-block;
 }
 section {
     background-color: white;
     padding: 1em 1.5em;
     margin: 1em .1em;
+    word-wrap: break-word;
+}
+#info {
+    font-size: .9em;
+    color: #233;
+}
+#titlechange ul {
+    padding-left: 1.2em;
 }
 .topic {
     border-top: 1px solid #DDD;
@@ -234,8 +236,8 @@ section {
 <header>
 <h1 id="pagetitle">##Orz 日报 - {{ date }}</h1>
 <div id="info">
-    <p>开始：{{ info.start }}，结束：{{ info.end }}</p>
-    <p>总计 {{ info.count }} 条，每分钟 {{ info.freq }} 条，人均 {{ info.avg }} 条</p>
+    <p>开始：{{ info.start }}，结束：{{ info.end }}；<wbr>
+    总计 {{ info.count }} 条，每分钟 {{ info.freq }} 条，人均 {{ info.avg }} 条</p>
 </div>
 </header>
 <section id="flooder">

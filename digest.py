@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import sys
 import time
 import math
@@ -17,6 +18,7 @@ import jieba.analyse
 
 TIMEZONE = 8 * 3600
 CUTWINDOW = (0 * 3600, 6 * 3600)
+LINKWINDOW = 900
 CHUNKINTERV = 120
 
 CFG = json.load(open('config.json'))
@@ -24,6 +26,8 @@ db = sqlite3.connect('chatlog.db')
 conn = db.cursor()
 
 USER_CACHE = {}
+
+re_url = re.compile(r"(^|[\s.:;?\-\]<\(])(https?://[-\w;/?:@&=+$\|\_.!~*\|'()\[\]%#,]+[\w/#](\(\))?)(?=$|[\s',\|\(\).:;?\-\[\]>\)])")
 
 def daystart(sec=None):
     if not sec:
@@ -118,6 +122,7 @@ class DigestComposer:
         self.title = ''
         self.tc = truecaser.Truecaser(truecaser.loaddict(open('vendor/truecase.txt', 'rb')))
         self.stopwords = frozenset(map(str.strip, open('vendor/stopwords.txt', 'r', encoding='utf-8')))
+        self.ircbots = re.compile(r'(titlbot|varia|Akarin).*')
         self.fetchmsg(date)
         self.msgindex()
 
@@ -170,7 +175,7 @@ class DigestComposer:
         for mid, value in self.msgs.items():
             src, text, date, fwd_src, fwd_date, reply_id, media = value
             self.fwd_lookup[(src, date)] = mid
-            tok = self.msgtok[mid] = tuple(self.msgpreprocess(self.tc.truecase(text)))
+            tok = self.msgtok[mid] = tuple(self.msgpreprocess(self.tc.truecase(re_url.sub('', text))))
             for w in frozenset(t.lower() for t in tok):
                 self.words[w] += 1
         self.words = dict(self.words)
@@ -207,9 +212,9 @@ class DigestComposer:
     def classify(self, mid):
         '''
         0 - Normal messages sent by users
-        1 - Interesting messages sent by the bot
+        1 - Interesting messages sent by the bots
         2 - Boring messages sent by users
-        3 - Boring messages sent by the bot
+        3 - Boring messages sent by the bots
         '''
         src, text, date, fwd_src, fwd_date, reply_id, media = self.msgs[mid]
         if src == CFG['botid']:
@@ -219,7 +224,11 @@ class DigestComposer:
             else:
                 return 3
         elif src == CFG['ircbotid']:
-            return 0
+            mmedia = json.loads(media or '{}')
+            if self.ircbots.match(mmedia.get('_ircuser', '')):
+                return 3
+            else:
+                return 0
         elif db_isbot(fwd_src) and len(text or '') > 75:
             return 3
         elif not text or text.startswith('/'):
@@ -239,7 +248,7 @@ class DigestComposer:
             if (backlink in self.msgs and (mid, backlink) not in edges):
                 edges[(mid, backlink)] = similarity(mid, backlink)
             for mid2, value2 in self.msgs.items():
-                if 0 < date - value2[2] < 1800:
+                if 0 < date - value2[2] < LINKWINDOW:
                     w = edges.get((mid, mid2)) or edges.get((mid2, mid)) or similarity(mid, mid2)
                     edges[(mid, mid2)] = w
                     edges[(mid2, mid)] = w
