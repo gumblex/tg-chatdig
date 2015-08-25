@@ -56,11 +56,14 @@ docs/_build/
 # PyBuilder
 target/
 
+*.build/
+*.exe
 
 old/
 experiment/
 *.log
 *.db
+update.sh
 config.json
 cmdbot.json
 vendor/chat.binlm
@@ -77,3 +80,5 @@ vendor/zhcdict.json
 vendor/zhconv.py
 vendor/bf.py
 vendor/lispy.py
+vendor/brainfuck
+vendor/truecase.txt
