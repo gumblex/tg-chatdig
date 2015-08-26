@@ -14,225 +14,7 @@
 <meta http-equiv="content-type" content="text/html; charset=UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>##Orz 日报 - {{ date }}</title>
-<style>
-body,
-textarea,
-input,
-select {
-    font-family: Roboto, Arial, sans-serif;
-    font-size: 15px;
-    line-height:1.25em;
-}
-.smooth {
-    transition: all .2s
-}
-.btn {
-    text-decoration: none
-}
-.container {
-    margin: 0 1.25em;
-    max-width: 75em;
-    width: auto
-}
-label>* {
-    display: inline
-}
-form>* {
-    margin-bottom: .625em
-}
-.btn {
-    background: #999;
-    border-radius: 2px;
-    border: 0;
-    color: #fff;
-    cursor: pointer;
-    display: inline-block;
-    padding: .4em 1em;
-    font-size: 1em;
-}
-.btn:hover {
-    background: #888
-}
-.btn:active,
-.btn:focus {
-    background: #777;
-    outline: 0
-}
-.btn-a {
-    background: #0ae
-}
-.btn-a:hover,
-.btn-a:focus {
-    background: #09d
-}
-.btn-a:active {
-    background: #08b
-}
-.btn-b {
-    background: #3c5
-}
-.btn-b:hover,
-.btn-b:focus {
-    background: #2b4
-}
-.btn-b:active {
-    background: #2a4
-}
-.btn-c {
-    background: #d33
-}
-.btn-c:hover,
-.btn-c:focus {
-    background: #c22
-}
-.btn-c:active {
-    background: #b22
-}
-.btn-sm {
-    border-radius: 2px;
-}
-.row {
-    margin: 1% 0;
-    padding: 3px 0;
-    overflow: auto
-}
-.col {
-    float: left
-}
-.table,
-.c12 {
-    width: 100%
-}
-.c11 {
-    width: 91.66%
-}
-.c10 {
-    width: 83.33%
-}
-.c9 {
-    width: 75%
-}
-.c8 {
-    width: 66.66%
-}
-.c7 {
-    width: 58.33%
-}
-.c6 {
-    width: 50%
-}
-.c5 {
-    width: 41.66%
-}
-.c4 {
-    width: 33.33%
-}
-.c3 {
-    width: 25%
-}
-.c2 {
-    width: 16.66%
-}
-.c1 {
-    width: 8.33%
-}
-fieldset, button {
-    margin: 0;
-    padding: 0.35em 0 0.75em;
-    border: 0;
-}
-.btn-sm,
-.nav {
-    font-size: .875em;
-}
-textarea,
-input,
-select,
-button {
-    padding: .2em .3em;
-    outline: 0;
-    font-size: 100%;
-}
-textarea,
-input,
-select {
-    border: 1px solid #ccc
-}
-textarea:focus,
-input:focus,
-select:focus {
-    border-color: #19E
-}
-textarea,
-input[type=text] {
-    -webkit-appearance: none;
-    width: 13em;
-    box-sizing: border-box;
-}
-@media(max-width:48em) {
-    .row.rmd > .col {
-        width: 100%
-    }
-}
-.table th,
-.table td {
-    padding: .5em;
-    text-align: left
-}
-.table tbody>:nth-child(2n-1) {
-    background: #eee
-}
-.msg {
-    padding: 1.5em;
-    background: #def;
-    border-left: 5px solid #59d
-}
-body {
-    margin: .5em 2em;
-    background-color: whitesmoke;
-}
-header {
-    margin-top: 0;
-    margin-bottom: 1em;
-}
-h1 {
-    font-size: 1.5em;
-    color: #0B3861;
-    padding-top: .2em;
-}
-h2 {
-    font-size: 1.25em;
-    margin: 0 0 .5em;
-}
-p {
-    margin: 0.5em 0;
-}
-.meta {
-    padding-left: .5em;
-    font-size: .8em;
-    color: grey;
-    display: inline-block;
-}
-section {
-    background-color: white;
-    padding: 1em 1.5em;
-    margin: 1em .1em;
-    word-wrap: break-word;
-}
-.num {
-    text-align: right;
-}
-#info {
-    font-size: .9em;
-    color: #233;
-}
-#titlechange ul {
-    padding-left: 1.2em;
-}
-.topic {
-    border-top: 1px solid #DDD;
-}
-</style>
+<link rel="stylesheet" href="digest.css">
 </head>
 <body>
 <div id="container">
@@ -243,7 +25,8 @@ section {
     总计 {{ info.count }} 条，每分钟 {{ info.freq }} 条，人均 {{ info.avg }} 条</p>
 </div>
 </header>
-<section id="flooder">
+<div class="row rmd">
+<section id="flooder" class="col c6">
     <h2>水王榜</h2>
     <table id="fldrank">
     <thead><tr><th>全名</th><th>消息</th><th>占比</th></tr></thead>
@@ -259,6 +42,18 @@ section {
     </tbody>
     </table>
 </section>
+<section id="tags" class="col c6">
+    <h2>标签</h2>
+    <table id="tagrank">
+    <thead><tr><th>标签</th><th>数量</th></tr></thead>
+    <tbody>
+    {% for t in info.tags %}
+    <tr><td>{{ t[0]|e }}</td><td class="num" data-mid="{{ t[1]|join(',') }}">{{ t[1]|length }}</td></tr>
+    {% endfor %}
+    </tbody>
+    </table>
+</section>
+</div>
 <section id="topics">
     <h2>今日热点</h2>
     {% for chunk in hotchunk -%}

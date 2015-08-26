@@ -17,9 +17,10 @@ import jinja2
 import truecaser
 import jieba.analyse
 
+TITLE = '##Orz 分部喵'
 TIMEZONE = 8 * 3600
 CUTWINDOW = (0 * 3600, 6 * 3600)
-LINKWINDOW = 900
+LINKWINDOW = 120
 CHUNKINTERV = 120
 
 CFG = json.load(open('config.json'))
@@ -28,6 +29,9 @@ conn = db.cursor()
 
 USER_CACHE = {}
 
+re_word = re.compile(r"\w+", re.UNICODE)
+re_tag = re.compile(r"#\w+", re.UNICODE)
+re_at = re.compile('@[A-Za-z][A-Za-z0-9_]{4,}')
 re_url = re.compile(r"(^|[\s.:;?\-\]<\(])(https?://[-\w;/?:@&=+$\|\_.!~*\|'()\[\]%#,]+[\w/#](\(\))?)(?=$|[\s',\|\(\).:;?\-\[\]>\)])")
 _ig1 = operator.itemgetter(1)
 
@@ -281,7 +285,7 @@ class DigestComposer:
         for chunk in self.chunker()[:5]:
             kwds = self.tfidf_kwd(itertools.chain.from_iterable(self.msgtok[mid] for mid in chunk if self.classify(mid) < 2))
             hotmsg = []
-            ranked = uniq(uniq(map(lambda x: self.fwd_lookup.get(operator.itemgetter(3, 4)(self.msgs[x[0]]), x[0]), self.hotrank(chunk))), key=lambda x: self.msgs[x][1])
+            ranked = uniq(uniq(filter(lambda x: re_word.search(self.msgs[x][1]), map(lambda x: self.fwd_lookup.get(operator.itemgetter(3, 4)(self.msgs[x[0]]), x[0]), self.hotrank(chunk)))), key=lambda x: self.tc.truecase(self.msgs[x][1]))
             for mid in ranked[:10]:
                 msg = self.msgs[mid]
                 text = msg[1]
@@ -289,6 +293,14 @@ class DigestComposer:
                     text = text[:233] + '…'
                 hotmsg.append((mid, text, msg[0], db_getfirstname(msg[0], json.loads(msg[6] or '{}')), strftime('%H:%M:%S', msg[2])))
             yield (kwds, hotmsg)
+
+    def tags(self):
+        tags = collections.defaultdict(list)
+        for mid, value in self.msgs.items():
+            text = value[1] or ''
+            for tag in re_tag.findall(text):
+                tags[self.tc.truecase(tag)].append(mid)
+        return sorted(tags.items(), key=lambda x: -len(x[1]))
 
     def tc_preprocess(self):
         prefix = [self.title]
@@ -341,6 +353,7 @@ class DigestComposer:
             'count': count,
             'freq': '%.2f' % (len(self.msgs) * 60 / (self.end - self.start)),
             'flooder': tuple(((k, db_getufname(k)), v, '%.2f%%' % (v/count*100)) for k, v in mcomm),
+            'tags': self.tags()[:6],
             'others': (others, '%.2f%%' % (others/count*100)),
             'avg': '%.2f' % (count / len(ctr))
         }
@@ -360,6 +373,6 @@ start = time.time()
 days = int(sys.argv[1]) if len(sys.argv) > 1 else 1
 
 dc = DigestComposer(time.time() - 86400 * days)
-dc.title = '##Orz 分部喵'
+dc.title = TITLE
 print(dc.render())
 sys.stderr.write('Done in %.4gs.\n' % (time.time() - start))
