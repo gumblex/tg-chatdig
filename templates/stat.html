@@ -1,0 +1,62 @@
+{% macro user(uid, nick) -%}
+<span class="user" data-uid="{{ uid }}">{{ nick|e }}</span>
+{%- endmacro %}
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>##Orz 统计</title>
+<link rel="stylesheet" href="digest.css">
+</head>
+<body>
+<div id="container">
+<header>
+<h1 id="pagetitle">##Orz 统计</h1>
+<div id="info">
+    <p>自 {{ info.start }} 到 {{ info.end }}
+    总计 {{ info.count }} 条，每分钟 {{ info.freq }} 条，人均 {{ info.avg }} 条。</p>
+</div>
+</header>
+<section id="flooder">
+    <h2>用户发言</h2>
+    <table id="fldrankb" class="table">
+    <thead><tr><th>排名</th><th>全名</th><th>用户名</th><th>消息</th><th>占比</th></tr></thead>
+    <tbody>
+    {% for u in info.flooder %}
+    <tr><td class="num">{{ loop.index }}</td><td class="fullname">{{ user(*u[0]) }}</td><td class="username">{{ u[1] }}</td>
+    <td class="num">{{ u[2] }}</td><td class="num">{{ u[3] }}</td></tr>
+    {% endfor %}
+    </tbody>
+    </table>
+</section>
+<div class="row rmd">
+<section id="tags" class="col c8">
+    <h2>话题标签</h2>
+    <table id="typerank">
+    <thead><tr><th>标签</th><th>数量</th></tr></thead>
+    <tbody>
+    {% for t in info.tags %}
+    <tr><td>{{ t[0] }}</td><td class="num">{{ t[1] }}</td></tr>
+    {% endfor %}
+    <tr><td>&lt;1~2 略&gt;</td><td class="num"></td></tr>
+    </tbody>
+    </table>
+</section>
+<section id="types" class="col c4">
+    <h2>消息类型</h2>
+    <table id="typerank">
+    <thead><tr><th>类型</th><th>占比</th></tr></thead>
+    <tbody>
+    {% for t in info.types %}
+    <tr><td>{{ t[0] }}</td><td class="num">{{ t[1] }}</td></tr>
+    {% endfor %}
+    </tbody>
+    </table>
+</section>
+</div>
+<footer>
+</footer>
+</div>
+</body>
+</html>

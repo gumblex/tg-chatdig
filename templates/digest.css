@@ -75,8 +75,6 @@ form>* {
     border-radius: 2px;
 }
 .row {
-    margin: 1% 0;
-    padding: 3px 0;
     overflow: auto
 }
 .col {
@@ -154,16 +152,17 @@ input[type=text] {
 }
 @media(max-width:48em) {
     .row.rmd > .col {
-        width: 100%
+        width: 100%;
+        float: none;
     }
 }
-.table th,
+/*.table th,
 .table td {
     padding: .5em;
     text-align: left
-}
-.table tbody>:nth-child(2n-1) {
-    background: #eee
+}*/
+table tbody>:nth-child(2n-1) {
+    background: whitesmoke;
 }
 .msg {
     padding: 1.5em;
@@ -190,11 +189,16 @@ h2 {
 p {
     margin: 0.5em 0;
 }
+td {
+    text-overflow: ellipsis;
+    word-wrap: break-word;
+}
 .meta {
     padding-left: .5em;
     font-size: .8em;
     color: grey;
     display: inline-block;
+    word-wrap: break-word;
 }
 section {
     background-color: white;
@@ -205,6 +209,7 @@ section {
 }
 .num {
     text-align: right;
+    min-width: 2em;
 }
 #info {
     font-size: .9em;
@@ -216,4 +221,13 @@ section {
 .topic {
     border-top: 1px solid #DDD;
     padding: .5em 0;
+}
+#fldrankb {
+    width: 100%;
+}
+.fullname {
+    width: 50%;
+}
+.username {
+    word-break: break-all;
 }

@@ -10,7 +10,6 @@ import json
 import sqlite3
 import operator
 import itertools
-import functools
 import collections
 
 import jinja2
@@ -351,7 +350,7 @@ class DigestComposer:
             'start': strftime('%d 日 %H:%M:%S', self.start),
             'end': strftime('%d 日 %H:%M:%S', self.end),
             'count': count,
-            'freq': '%.2f' % (len(self.msgs) * 60 / (self.end - self.start)),
+            'freq': '%.2f' % (count * 60 / (self.end - self.start)),
             'flooder': tuple(((k, db_getufname(k)), v, '%.2f%%' % (v/count*100)) for k, v in mcomm),
             'tags': self.tags()[:6],
             'others': (others, '%.2f%%' % (others/count*100)),
@@ -369,10 +368,11 @@ class DigestComposer:
         template = jinja2.Environment(loader=jinja2.FileSystemLoader('templates')).get_template(self.template)
         return template.render(**kvars)
 
-start = time.time()
-days = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+if __name__ == '__main__':
+    start = time.time()
+    days = int(sys.argv[1]) if len(sys.argv) > 1 else 1
 
-dc = DigestComposer(time.time() - 86400 * days)
-dc.title = TITLE
-print(dc.render())
-sys.stderr.write('Done in %.4gs.\n' % (time.time() - start))
+    dc = DigestComposer(time.time() - 86400 * days)
+    dc.title = TITLE
+    print(dc.render())
+    sys.stderr.write('Done in %.4gs.\n' % (time.time() - start))
