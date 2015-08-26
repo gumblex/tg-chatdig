@@ -173,6 +173,16 @@ body {
     margin: .5em 2em;
     background-color: whitesmoke;
 }
+a {
+    color: #2a3f3f;
+    padding: .25em;
+}
+a:visited {
+    color: #233;
+}
+a:hover, a:focus {
+    color: #344e4e;
+}
 header {
     margin-top: 0;
     margin-bottom: 1em;
@@ -211,9 +221,12 @@ section {
     text-align: right;
     min-width: 2em;
 }
-#info {
+#info, footer {
     font-size: .9em;
     color: #233;
+}
+footer {
+    text-align: right;
 }
 #titlechange ul {
     padding-left: 1.2em;

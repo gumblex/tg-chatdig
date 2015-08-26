@@ -7,14 +7,16 @@ import sys
 import time
 import math
 import json
+import shutil
 import sqlite3
 import operator
 import itertools
 import collections
 
+import jieba
 import jinja2
 import truecaser
-import jieba.analyse
+#import jieba.analyse
 
 TITLE = '##Orz 分部喵'
 TIMEZONE = 8 * 3600
@@ -33,6 +35,21 @@ re_tag = re.compile(r"#\w+", re.UNICODE)
 re_at = re.compile('@[A-Za-z][A-Za-z0-9_]{4,}')
 re_url = re.compile(r"(^|[\s.:;?\-\]<\(])(https?://[-\w;/?:@&=+$\|\_.!~*\|'()\[\]%#,]+[\w/#](\(\))?)(?=$|[\s',\|\(\).:;?\-\[\]>\)])")
 _ig1 = operator.itemgetter(1)
+
+MEDIA_TYPES = {
+'text': '文本',
+'audio': '声音',
+'document': '文件',
+'photo': '图片',
+'sticker': '贴纸',
+'video': '视频',
+'voice': '语音',
+'contact': '名片',
+'location': '位置',
+'service': '服务'
+}
+
+SERVICE = frozenset(('new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created'))
 
 def daystart(sec=None):
     if not sec:
@@ -363,16 +380,139 @@ class DigestComposer:
             'date': strftime('%Y-%m-%d', self.date),
             'info': self.generalinfo(),
             'hotchunk': tuple(self.hotchunk()),
-            'titlechange': tuple(self.titlechange())
+            'titlechange': tuple(self.titlechange()),
+            'gentime': strftime('%Y-%m-%d %H:%M:%S')
         }
         template = jinja2.Environment(loader=jinja2.FileSystemLoader('templates')).get_template(self.template)
         return template.render(**kvars)
 
-if __name__ == '__main__':
-    start = time.time()
-    days = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+class StatComposer:
 
-    dc = DigestComposer(time.time() - 86400 * days)
-    dc.title = TITLE
-    print(dc.render())
+    def __init__(self):
+        self.template = 'stat.html'
+        self.tc = truecaser.Truecaser(truecaser.loaddict(open('vendor/truecase.txt', 'rb')))
+
+    def fetchmsgstat(self):
+        self.msglen = self.start = self.end = 0
+        mediactr = collections.Counter()
+        usrctr = collections.Counter()
+        tags = collections.Counter()
+        for mid, src, text, date, media in conn.execute('SELECT id, src, text, date, media FROM messages ORDER BY date ASC, id ASC'):
+            text = text or ''
+            if not self.start:
+                self.start = date
+            self.start = min(self.start, date)
+            self.end = max(self.end, date)
+            for tag in re_tag.findall(text):
+                tags[self.tc.truecase(tag)] += 1
+            media = json.loads(media or '{}')
+            if media.get('type') in MEDIA_TYPES:
+                t = media['type']
+            else:
+                mt = media.keys() & MEDIA_TYPES.keys()
+                if mt:
+                    t = tuple(mt)[0]
+                elif media.keys() & SERVICE:
+                    t = 'service'
+                else:
+                    t = 'text'
+            mediactr[t] += 1
+            usrctr[src] += 1
+            self.msglen += 1
+        self.end = date
+        types = [(MEDIA_TYPES[k], v) for k, v in mediactr.most_common()]
+        tags = sorted(filter(lambda x: x[1] > 2, tags.items()), key=lambda x: -x[1])
+        return types, tags, usrctr
+
+    def generalinfo(self):
+        types, tags, usrctr = self.fetchmsgstat()
+        mcomm = usrctr.most_common()
+        count = self.msglen
+        stat = {
+            'start': strftime('%Y-%m-%d %H:%M:%S', self.start),
+            'end': strftime('%Y-%m-%d %H:%M:%S', self.end),
+            'count': count,
+            'freq': '%.2f' % (count * 60 / (self.end - self.start)),
+            'flooder': tuple(((k, db_getufname(k)), db_getuser(k)[0] or '', v, '%.2f%%' % (v/count*100)) for k, v in mcomm),
+            'types': types,
+            'tags': tags,
+            'avg': '%.2f' % (count / len(usrctr))
+        }
+        return stat
+
+    def render(self):
+        kvars = {
+            'info': self.generalinfo(),
+            'gentime': strftime('%Y-%m-%d %H:%M:%S')
+        }
+        template = jinja2.Environment(loader=jinja2.FileSystemLoader('templates')).get_template(self.template)
+        return template.render(**kvars)
+
+re_digest = re.compile(r'^(\d+)-(\d+)-(\d+).html$')
+
+class DigestManager:
+
+    def __init__(self, path='.'):
+        self.template = 'index.html'
+        self.path = path
+
+    def copyresource(self):
+        for filename in ('digest.css',):
+            src = os.path.join('templates', filename)
+            dst = os.path.join(self.path, filename)
+            shutil.copyfile(src, dst)
+            shutil.copystat(src, dst)
+
+    def writenewdigest(self, date=None):
+        date = date or (time.time() - 86400)
+        dc = DigestComposer(date)
+        dc.title = TITLE
+        with open(os.path.join(self.path, strftime('%Y-%m-%d.html', date)), 'w') as f:
+            f.write(dc.render())
+        del dc
+
+    def writenewstat(self):
+        sc = StatComposer()
+        with open(os.path.join(self.path, 'stat.html'), 'w') as f:
+            f.write(sc.render())
+        del sc
+
+    def genindex(self):
+        index = []
+        for filename in sorted(os.listdir(self.path), reverse=True):
+            fn = re_digest.match(filename)
+            if fn:
+                index.append((filename, '%s 年 %s 月 %s 日' % fn.groups()))
+        return index
+
+    def render(self):
+        kvars = {
+            'index': self.genindex(),
+            'gentime': strftime('%Y-%m-%d %H:%M:%S')
+        }
+        template = jinja2.Environment(loader=jinja2.FileSystemLoader('templates')).get_template(self.template)
+        return template.render(**kvars)
+
+    def writenewindex(self):
+        with open(os.path.join(self.path, 'index.html'), 'w') as f:
+            f.write(self.render())
+
+
+if __name__ == '__main__':
+
+    version = 1
+    path = '.'
+
+    if len(sys.argv) > 1:
+        path = sys.argv[1]
+    if len(sys.argv) > 2:
+        version = int(sys.argv[2])
+
+    start = time.time()
+    dm = DigestManager(path)
+    dm.copyresource()
+    for i in range(version):
+        dm.writenewdigest(start - 86400 * i)
+    dm.writenewstat()
+    dm.writenewindex()
     sys.stderr.write('Done in %.4gs.\n' % (time.time() - start))
