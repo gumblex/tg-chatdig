@@ -84,7 +84,7 @@ def db_getufname(uid, mmedia=None):
         name, last = db_getuser(uid)[1:]
         if last:
             name += ' ' + last
-        return name
+        return name or '<未知>'
 
 def db_getfirstname(uid, mmedia=None):
     if uid == CFG['ircbotid']:
@@ -93,7 +93,8 @@ def db_getfirstname(uid, mmedia=None):
         else:
             return '<IRC 用户>'
     else:
-        return db_getufname(uid).split()[0]
+        fn = db_getufname(uid)
+        return fn.split()[0]
 
 def strftime(fmt, t=None):
     if t is None:
@@ -167,7 +168,7 @@ class DigestComposer:
         msgs = collections.OrderedDict()
         intervals = ([], [])
         for mid, src, text, date, fwd_src, fwd_date, reply_id, media in conn.execute('SELECT id, src, text, date, fwd_src, fwd_date, reply_id, media FROM messages WHERE date >= ? AND date < ? ORDER BY date ASC, id ASC', (start[0], end[1])):
-            msgs[mid] = (src, text, date, fwd_src, fwd_date, reply_id, media)
+            msgs[mid] = (src, text or '', date, fwd_src, fwd_date, reply_id, media)
             if start[0] <= date < start[1]:
                 intervals[0].append((date - last, mid))
             elif last < start[1] <= date:
@@ -363,11 +364,12 @@ class DigestComposer:
         mcomm = ctr.most_common(5)
         count = len(self.msgs)
         others = count - sum(v for k, v in mcomm)
+        delta = self.end - self.start
         stat = {
             'start': strftime('%d 日 %H:%M:%S', self.start),
             'end': strftime('%d 日 %H:%M:%S', self.end),
             'count': count,
-            'freq': '%.2f' % (count * 60 / (self.end - self.start)),
+            'freq': '%.2f' % (count * 60 / delta) if delta else 'N/A',
             'flooder': tuple(((k, db_getufname(k)), v, '%.2f%%' % (v/count*100)) for k, v in mcomm),
             'tags': self.tags()[:6],
             'others': (others, '%.2f%%' % (others/count*100)),
@@ -463,11 +465,17 @@ class DigestManager:
             shutil.copyfile(src, dst)
             shutil.copystat(src, dst)
 
-    def writenewdigest(self, date=None):
+    def writenewdigest(self, date=None, update=False):
         date = date or (time.time() - 86400)
-        dc = DigestComposer(date)
+        filename = os.path.join(self.path, strftime('%Y-%m-%d.html', date))
+        if not update and os.path.isfile(filename):
+            return
+        try:
+            dc = DigestComposer(date)
+        except ValueError:
+            return
         dc.title = TITLE
-        with open(os.path.join(self.path, strftime('%Y-%m-%d.html', date)), 'w') as f:
+        with open(filename, 'w') as f:
             f.write(dc.render())
         del dc
 
