@@ -223,6 +223,66 @@ def irc_forward(msg):
 
 ### DB import
 
+def mediaformatconv(media=None, action=None):
+    type_map = {
+    # media
+    'photo': 'photo',
+    'document': 'document',
+    'unsupported': 'document',
+    'geo': 'location',
+    'venue': 'location',
+    'contact': 'contact',
+    # action
+    'chat_add_user': 'new_chat_participant',
+    'chat_add_user_link': 'new_chat_participant',
+    'chat_del_user': 'left_chat_participant',
+    'chat_rename': 'new_chat_title',
+    'chat_change_photo': 'new_chat_photo',
+    'chat_delete_photo': 'delete_chat_photo',
+    'chat_created': 'group_chat_created'
+    }
+    d = {}
+    caption = None
+    if media:
+        media = json.loads(media)
+    if action:
+        action = json.loads(action)
+    if media and 'type' in media:
+        media = media.copy()
+        if media['type'] == 'photo':
+            caption = media['caption']
+            d['photo'] = []
+        elif media['type'] in ('document', 'unsupported'):
+            d['document'] = {}
+        elif 'longitude' in media:
+            # 'type' may be the name of the place
+            d['location'] = {
+                'longitude': media['longitude'],
+                'latitude': media['latitude']
+            }
+        elif media['type'] == 'contact':
+            del media['type']
+            media['phone_number'] = media.pop('phone')
+            d['contact'] = media
+        # ignore other undefined types to Bot API
+    if action and 'type' in action:
+        newname = type_map.get(action['type'])
+        if newname.endswith('chat_participant'):
+            d[newname] = {
+                'id': action['user']['id'],
+                'first_name': action['user'].get('first_name', ''),
+                'last_name': action['user'].get('last_name', ''),
+                'username': action['user'].get('username', '')
+            }
+        elif newname == 'new_chat_title':
+            d[newname] = action['title']
+        elif newname == 'new_chat_photo':
+            d[newname] = []
+        elif newname in ('delete_chat_photo', 'group_chat_created'):
+            d[newname] = True
+        # ignore other undefined types to Bot API
+    return json.dumps(d) if d else None, caption
+
 def importdb(filename):
     logging.info('Import DB...')
     if not os.path.isfile(filename):
@@ -230,9 +290,11 @@ def importdb(filename):
         return
     db_s = sqlite3.connect(filename)
     conn_s = db_s.cursor()
-    for vals in conn_s.execute('SELECT id, src, text, media, date, fwd_src, fwd_date, reply_id FROM messages WHERE dest = ?', (CFG['groupid'],)):
+    for vals in conn_s.execute('SELECT id, src, text, media, date, fwd_src, fwd_date, reply_id, action FROM messages WHERE dest = ?', (CFG['groupid'],)):
         vals = list(vals)
         vals[0] = -250000 + vals[0]
+        vals[3], caption = mediaformatconv(vals[3], vals.pop())
+        vals[2] = vals[2] or caption
         conn.execute('INSERT OR IGNORE INTO messages (id, src, text, media, date, fwd_src, fwd_date, reply_id) VALUES (?,?,?,?, ?,?,?,?)', vals)
     for vals in conn_s.execute('SELECT id, username, first_name, last_name FROM users'):
         conn.execute('INSERT OR IGNORE INTO users (id, username, first_name, last_name) VALUES (?,?,?,?)', vals)
@@ -256,6 +318,21 @@ def importupdates(offset, number=5000):
                     logmsg(msg, True)
         time.sleep(.1)
         updates = bot_api('getUpdates', offset=off, limit=100)
+
+def importfixservice(filename):
+    logging.info('Updating DB...')
+    if not os.path.isfile(filename):
+        logging.warning('DB not found.')
+        return
+    db_s = sqlite3.connect(filename)
+    conn_s = db_s.cursor()
+    for mid, text, media, action in conn_s.execute('SELECT id, text, media, action FROM messages WHERE dest = ?', (CFG['groupid'],)):
+        mid -= 250000
+        media, caption = mediaformatconv(media, action)
+        text = text or caption
+        conn.execute('UPDATE messages SET text=?, media=? WHERE id=?', (text, media, mid))
+    db.commit()
+    logging.info('Fix DB media column done.')
 
 ### API Related
 
@@ -911,6 +988,7 @@ def cmd__cmd(expr, chatid, replyid, msg):
         APP_P.terminate()
         APP_P = subprocess.Popen(APP_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         sendmsg('Server killed.', chatid, replyid)
+        logging.info('Server killed upon user request.')
     elif expr == 'commit':
         while 1:
             try:
@@ -918,11 +996,12 @@ def cmd__cmd(expr, chatid, replyid, msg):
             except queue.Empty:
                 break
         db.commit()
-        sendmsg('DB committed upon user request.', chatid, replyid)
+        sendmsg('DB committed.', chatid, replyid)
+        logging.info('DB committed upon user request.')
     #elif expr == 'raiseex':  # For debug
         #async_func(_raise_ex)(Exception('/_cmd raiseex'))
-    else:
-        sendmsg('ping', chatid, replyid)
+    #else:
+        #sendmsg('ping', chatid, replyid)
 
 def cmd_hello(expr, chatid, replyid, msg):
     delta = time.time() - daystart()
@@ -1040,8 +1119,12 @@ MSG_CACHE = LRUCache(10)
 CFG = json.load(open('config.json'))
 URL = 'https://api.telegram.org/bot%s/' % CFG['token']
 
+# Initialize messages in database
+
 #importdb('telegram-history.db')
 #importupdates(OFFSET, 2000)
+#importfixservice('telegram-history.db')
+#sys.exit(0)
 
 signal.signal(signal.SIGUSR1, sig_commit)
 
