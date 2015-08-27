@@ -303,7 +303,7 @@ class DigestComposer:
             kwds = self.tfidf_kwd(itertools.chain.from_iterable(self.msgtok[mid] for mid in chunk if self.classify(mid) < 2))
             hotmsg = []
             ranked = uniq(uniq(filter(lambda x: re_word.search(self.msgs[x][1]), map(lambda x: self.fwd_lookup.get(operator.itemgetter(3, 4)(self.msgs[x[0]]), x[0]), self.hotrank(chunk)))), key=lambda x: self.tc.truecase(self.msgs[x][1]))
-            for mid in ranked[:10]:
+            for mid in (ranked[:10] or chunk[:10]):
                 msg = self.msgs[mid]
                 text = msg[1]
                 if len(text) > 233:
@@ -396,6 +396,7 @@ class StatComposer:
 
     def fetchmsgstat(self):
         self.msglen = self.start = self.end = 0
+        hourctr = [0] * 24
         mediactr = collections.Counter()
         usrctr = collections.Counter()
         tags = collections.Counter()
@@ -408,26 +409,27 @@ class StatComposer:
             for tag in re_tag.findall(text):
                 tags[self.tc.truecase(tag)] += 1
             media = json.loads(media or '{}')
-            if media.get('type') in MEDIA_TYPES:
-                t = media['type']
+            mt = media.keys() & MEDIA_TYPES.keys()
+            if mt:
+                t = tuple(mt)[0]
+            elif media.keys() & SERVICE:
+                t = 'service'
             else:
-                mt = media.keys() & MEDIA_TYPES.keys()
-                if mt:
-                    t = tuple(mt)[0]
-                elif media.keys() & SERVICE:
-                    t = 'service'
-                else:
-                    t = 'text'
+                t = 'text'
+            hourctr[int(((date + TIMEZONE) // 3600) % 24)] += 1
             mediactr[t] += 1
             usrctr[src] += 1
             self.msglen += 1
         self.end = date
-        types = [(MEDIA_TYPES[k], v) for k, v in mediactr.most_common()]
+        typesum = sum(mediactr.values())
+        types = [(MEDIA_TYPES[k], '%.2f%%' % (v * 100 / typesum)) for k, v in mediactr.most_common()]
         tags = sorted(filter(lambda x: x[1] > 2, tags.items()), key=lambda x: -x[1])
-        return types, tags, usrctr
+        return hourctr, types, tags, usrctr
 
     def generalinfo(self):
-        types, tags, usrctr = self.fetchmsgstat()
+        hours, types, tags, usrctr = self.fetchmsgstat()
+        hsum = sum(hours)
+        hourdist = ['%.2f%%' % (h * 100 / hsum) for h in hours]
         mcomm = usrctr.most_common()
         count = self.msglen
         stat = {
@@ -435,7 +437,8 @@ class StatComposer:
             'end': strftime('%Y-%m-%d %H:%M:%S', self.end),
             'count': count,
             'freq': '%.2f' % (count * 60 / (self.end - self.start)),
-            'flooder': tuple(((k, db_getufname(k)), db_getuser(k)[0] or '', v, '%.2f%%' % (v/count*100)) for k, v in mcomm),
+            'flooder': tuple(((k, db_getufname(k)), db_getuser(k)[0] or '', '%.2f%%' % (v/count*100)) for k, v in mcomm),
+            'hours': hourdist,
             'types': types,
             'tags': tags,
             'avg': '%.2f' % (count / len(usrctr))
@@ -508,19 +511,22 @@ class DigestManager:
 
 if __name__ == '__main__':
 
-    version = 1
     path = '.'
+    version = 1
+    update = False
 
     if len(sys.argv) > 1:
         path = sys.argv[1]
     if len(sys.argv) > 2:
         version = int(sys.argv[2])
+    if len(sys.argv) > 3:
+        update = bool(sys.argv[3])
 
     start = time.time()
     dm = DigestManager(path)
     dm.copyresource()
-    for i in range(version):
-        dm.writenewdigest(start - 86400 * i)
+    for i in range(1, version):
+        dm.writenewdigest(start - 86400 * i, update)
     dm.writenewstat()
     dm.writenewindex()
     sys.stderr.write('Done in %.4gs.\n' % (time.time() - start))

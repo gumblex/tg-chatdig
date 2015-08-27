@@ -21,11 +21,11 @@
 <section id="flooder">
     <h2>用户发言</h2>
     <table id="fldrankb" class="table">
-    <thead><tr><th>排名</th><th>全名</th><th>用户名</th><th>消息</th><th>占比</th></tr></thead>
+    <thead><tr><th>排名</th><th>全名</th><th>用户名</th><th>占比</th></tr></thead>
     <tbody>
     {% for u in info.flooder %}
     <tr><td class="num">{{ loop.index }}</td><td class="fullname">{{ user(*u[0]) }}</td><td class="username">{{ u[1] }}</td>
-    <td class="num">{{ u[2] }}</td><td class="num">{{ u[3] }}</td></tr>
+    <td><div class="bar" style="width: {{ u[2] }}">{{ u[2] }}</div></td></tr>
     {% endfor %}
     </tbody>
     </table>
@@ -37,23 +37,38 @@
     <thead><tr><th>标签</th><th>数量</th></tr></thead>
     <tbody>
     {% for t in info.tags %}
-    <tr><td>{{ t[0] }}</td><td class="num">{{ t[1] }}</td></tr>
+    <tr><td class="tag">{{ t[0] }}</td><td class="num">{{ t[1] }}</td></tr>
     {% endfor %}
-    <tr><td>&lt;1~2 略&gt;</td><td class="num"></td></tr>
+    <tr><td class="tag">&lt;1~2 略&gt;</td><td class="num"></td></tr>
     </tbody>
     </table>
 </section>
-<section id="types" class="col c4">
+<div class="col c4">
+<section id="hourdist">
+    <h2>时间分布</h2>
+    <table id="hdtable" class="table">
+    <thead><tr><th>小时</th><th>占比</th></tr></thead>
+    <tbody>
+    {% for t in info.hours %}
+    <tr><td class="hour">{{ loop.index0 }}</td>
+    <td><div class="bar" style="width: {{ t }}">{{ t }}</div></td></tr>
+    {% endfor %}
+    </tbody>
+    </table>
+</section>
+<section id="types">
     <h2>消息类型</h2>
-    <table id="typerank">
+    <table id="typerank" class="table">
     <thead><tr><th>类型</th><th>占比</th></tr></thead>
     <tbody>
     {% for t in info.types %}
-    <tr><td>{{ t[0] }}</td><td class="num">{{ t[1] }}</td></tr>
+    <tr><td>{{ t[0] }}</td>
+    <td><div class="bar" style="width: {{ t[1] }}">{{ t[1] }}</div></td></tr>
     {% endfor %}
     </tbody>
     </table>
 </section>
+</div>
 </div>
 <footer>
 <a href="index.html">存档</a> - 更新时间：{{ gentime }}

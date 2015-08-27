@@ -221,6 +221,13 @@ section {
     text-align: right;
     min-width: 2em;
 }
+.bar {
+    text-align: left;
+    background-color: #81c3ff;
+    overflow-x: visible;
+    overflow-wrap: normal;
+    word-wrap: normal;
+}
 #info, footer {
     font-size: .9em;
     color: #233;
@@ -239,8 +246,17 @@ footer {
     width: 100%;
 }
 .fullname {
-    width: 50%;
+    width: 45%;
+}
+.tag {
+    width: 80%;
+    word-break: break-all;
 }
 .username {
+    min-width: 3em;
     word-break: break-all;
+}
+.hour {
+    width: 2em;
+    font-weight: bold;
 }

@@ -32,12 +32,13 @@
     <thead><tr><th>全名</th><th>消息</th><th>占比</th></tr></thead>
     <tbody>
     {% for u in info.flooder %}
-    <tr><td>{{ user(*u[0]) }}</td><td class="num">{{ u[1] }}</td><td class="num">{{ u[2] }}</td></tr>
+    <tr><td>{{ user(*u[0]) }}</td><td class="num">{{ u[1] }}</td>
+    <td><div class="bar" style="width: {{ u[2] }}">{{ u[2] }}</div></td></tr>
     {% endfor %}
     <tr>
     <td>&lt;其他用户&gt;</td>
     <td class="num">{{ info.others[0] }}</td>
-    <td class="num">{{ info.others[1] }}</td>
+    <td><div class="bar" style="width: {{ info.others[1] }}">{{ info.others[1] }}</div></td>
     </tr>
     </tbody>
     </table>
