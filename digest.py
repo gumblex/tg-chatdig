@@ -17,6 +17,8 @@ import jieba
 import jinja2
 import truecaser
 #import jieba.analyse
+#from vendor import mosesproxy as jieba
+
 
 TITLE = '##Orz 分部喵'
 TIMEZONE = 8 * 3600
@@ -101,6 +103,12 @@ def strftime(fmt, t=None):
         t = time.time()
     t += TIMEZONE
     return time.strftime(fmt, time.gmtime(t))
+
+def getwday(t=None):
+    if t is None:
+        t = time.time()
+    t += TIMEZONE
+    return ('周一','周二','周三','周四','周五','周六','周日')[time.gmtime(t)[6]]
 
 class DirectWeightedGraph:
     d = 0.85
@@ -302,12 +310,13 @@ class DigestComposer:
         for chunk in self.chunker()[:5]:
             kwds = self.tfidf_kwd(itertools.chain.from_iterable(self.msgtok[mid] for mid in chunk if self.classify(mid) < 2))
             hotmsg = []
-            ranked = uniq(uniq(filter(lambda x: re_word.search(self.msgs[x][1]), map(lambda x: self.fwd_lookup.get(operator.itemgetter(3, 4)(self.msgs[x[0]]), x[0]), self.hotrank(chunk)))), key=lambda x: self.tc.truecase(self.msgs[x][1]))
+            wordinmsg = lambda x: re_word.search(self.msgs[x][1])
+            ranked = uniq(uniq(filter(wordinmsg, map(lambda x: self.fwd_lookup.get(operator.itemgetter(3, 4)(self.msgs[x[0]]), x[0]), self.hotrank(chunk)))), key=lambda x: self.tc.truecase(self.msgs[x][1])) or list(filter(wordinmsg, chunk)) or chunk
             for mid in (ranked[:10] or chunk[:10]):
                 msg = self.msgs[mid]
                 text = msg[1]
-                if len(text) > 233:
-                    text = text[:233] + '…'
+                if len(text) > 500:
+                    text = text[:500] + '…'
                 hotmsg.append((mid, text, msg[0], db_getfirstname(msg[0], json.loads(msg[6] or '{}')), strftime('%H:%M:%S', msg[2])))
             yield (kwds, hotmsg)
 
@@ -380,6 +389,7 @@ class DigestComposer:
     def render(self):
         kvars = {
             'date': strftime('%Y-%m-%d', self.date),
+            'wday': getwday(self.date),
             'info': self.generalinfo(),
             'hotchunk': tuple(self.hotchunk()),
             'titlechange': tuple(self.titlechange()),
@@ -525,7 +535,7 @@ if __name__ == '__main__':
     start = time.time()
     dm = DigestManager(path)
     dm.copyresource()
-    for i in range(1, version):
+    for i in range(1, version+1):
         dm.writenewdigest(start - 86400 * i, update)
     dm.writenewstat()
     dm.writenewindex()

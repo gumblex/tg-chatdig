@@ -19,8 +19,8 @@
 <body>
 <div id="container">
 <header>
-<h1 id="pagetitle">##Orz 日报 - {{ date }}</h1>
-<div id="info">
+<h1 id="pagetitle">##Orz 日报<span class="info"> - {{ date }} {{ wday }}</span></h1>
+<div class="info">
     <p>开始：{{ info.start }}，结束：{{ info.end }}；<wbr>
     总计 {{ info.count }} 条，每分钟 {{ info.freq }} 条，人均 {{ info.avg }} 条</p>
 </div>

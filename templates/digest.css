@@ -174,14 +174,14 @@ body {
     background-color: whitesmoke;
 }
 a {
-    color: #2a3f3f;
+    color: #425e5e;
     padding: .25em;
 }
 a:visited {
     color: #233;
 }
 a:hover, a:focus {
-    color: #344e4e;
+    color: #4e7a7a;
 }
 header {
     margin-top: 0;
@@ -228,7 +228,7 @@ section {
     overflow-wrap: normal;
     word-wrap: normal;
 }
-#info, footer {
+.info, footer {
     font-size: .9em;
     color: #233;
 }
