@@ -9,6 +9,12 @@ Main script, handles a lot of commands. Uses a SQLite 3 database to store messag
 
 Executes `telegram-cli` and fetches history messages.
 
+## digest.py
+
+Generate daily digest from the message database.
+
+`python3 digest.py path [days=1] [update=0]`
+
 ## vendor/
 
 Some interesting functions.
