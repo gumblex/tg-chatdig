@@ -1,3 +1,5 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
 {% macro user(uid, nick) -%}
 <span class="user" data-uid="{{ uid }}">{{ nick|e }}</span>
 {%- endmacro %}
@@ -8,18 +10,16 @@
 {% endif %}
 </span>
 {%- endmacro %}
-<!DOCTYPE html>
-<html lang="zh-cn">
 <head>
 <meta http-equiv="content-type" content="text/html; charset=UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>##Orz 日报 - {{ date }}</title>
+<title>{{ name }} 日报 - {{ date }}</title>
 <link rel="stylesheet" href="digest.css">
 </head>
 <body>
 <div id="container">
 <header>
-<h1 id="pagetitle">##Orz 日报<span class="info"> - {{ date }} {{ wday }}</span></h1>
+<h1 id="pagetitle">{{ name }} 日报<span class="info"> - {{ date }} {{ wday }}</span></h1>
 <div class="info">
     <p>开始：{{ info.start }}，结束：{{ info.end }}；<wbr>
     总计 {{ info.count }} 条，每分钟 {{ info.freq }} 条，人均 {{ info.avg }} 条</p>
@@ -59,7 +59,7 @@
     <h2>今日热点</h2>
     {% for chunk in hotchunk -%}
     <div class="topic">
-    <p><strong>关键词：</strong>{{ chunk[0]|join(', ')|e }}</p>
+    <p><strong>关键词：</strong><span class="keywords">{{ chunk[0]|join(', ')|e }}</span></p>
     <ol>{% for msg in chunk[1] %}<li>{{ msgwmeta(*msg) }}</li>{% endfor %}
     </ol>
     </div>

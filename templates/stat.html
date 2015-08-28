@@ -1,18 +1,18 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
 {% macro user(uid, nick) -%}
 <span class="user" data-uid="{{ uid }}">{{ nick|e }}</span>
 {%- endmacro %}
-<!DOCTYPE html>
-<html lang="zh-cn">
 <head>
 <meta http-equiv="content-type" content="text/html; charset=UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>##Orz 统计</title>
+<title>{{ name }} 统计</title>
 <link rel="stylesheet" href="digest.css">
 </head>
 <body>
 <div id="container">
 <header>
-<h1 id="pagetitle">##Orz 统计</h1>
+<h1 id="pagetitle">{{ name }} 统计</h1>
 <div class="info">
     <p>自 {{ info.start }} 到 {{ info.end }}
     总计 {{ info.count }} 条，每分钟 {{ info.freq }} 条，人均 {{ info.avg }} 条。</p>

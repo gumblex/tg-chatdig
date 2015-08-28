@@ -20,6 +20,7 @@ import truecaser
 #from vendor import mosesproxy as jieba
 
 
+NAME = '##Orz'
 TITLE = '##Orz 分部喵'
 TIMEZONE = 8 * 3600
 CUTWINDOW = (0 * 3600, 6 * 3600)
@@ -326,7 +327,7 @@ class DigestComposer:
             text = value[1] or ''
             for tag in re_tag.findall(text):
                 tags[self.tc.truecase(tag)].append(mid)
-        return sorted(tags.items(), key=lambda x: -len(x[1]))
+        return sorted(tags.items(), key=lambda x: (-len(x[1]), x[0]))
 
     def tc_preprocess(self):
         prefix = [self.title]
@@ -388,6 +389,7 @@ class DigestComposer:
 
     def render(self):
         kvars = {
+            'name': NAME,
             'date': strftime('%Y-%m-%d', self.date),
             'wday': getwday(self.date),
             'info': self.generalinfo(),
@@ -433,7 +435,7 @@ class StatComposer:
         self.end = date
         typesum = sum(mediactr.values())
         types = [(MEDIA_TYPES[k], '%.2f%%' % (v * 100 / typesum)) for k, v in mediactr.most_common()]
-        tags = sorted(filter(lambda x: x[1] > 2, tags.items()), key=lambda x: -x[1])
+        tags = sorted(filter(lambda x: x[1] > 2, tags.items()), key=lambda x: (-x[1], x[0]))
         return hourctr, types, tags, usrctr
 
     def generalinfo(self):
@@ -457,6 +459,7 @@ class StatComposer:
 
     def render(self):
         kvars = {
+            'name': NAME,
             'info': self.generalinfo(),
             'gentime': strftime('%Y-%m-%d %H:%M:%S')
         }
@@ -508,6 +511,7 @@ class DigestManager:
 
     def render(self):
         kvars = {
+            'name': NAME,
             'index': self.genindex(),
             'gentime': strftime('%Y-%m-%d %H:%M:%S')
         }

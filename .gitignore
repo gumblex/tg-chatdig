@@ -63,7 +63,7 @@ old/
 experiment/
 *.log
 *.db
-update.sh
+*.sh
 config.json
 cmdbot.json
 vendor/chat.binlm
