@@ -13,11 +13,11 @@ import operator
 import itertools
 import collections
 
-import jieba
+#import jieba
 import jinja2
 import truecaser
 #import jieba.analyse
-#from vendor import mosesproxy as jieba
+from vendor import mosesproxy as jieba
 
 
 NAME = '##Orz'

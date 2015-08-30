@@ -731,11 +731,16 @@ def timestring(minutes):
 
 def cmd_uinfo(expr, chatid, replyid, msg):
     '''/user|/uinfo [@username] [minutes=1440] Show information about <@username>.'''
+    tinput = ''
+    if 'reply_to_message' in msg:
+        uid = msg['reply_to_message']['from']['id']
+    else:
+        uid = None
     if expr:
         expr = expr.split(' ')
         username = expr[0]
         if not username.startswith('@'):
-            uid = msg['from']['id']
+            uid = uid or msg['from']['id']
             try:
                 minutes = min(max(int(expr[0]), 1), 3359733)
             except Exception:
@@ -750,7 +755,7 @@ def cmd_uinfo(expr, chatid, replyid, msg):
             except Exception:
                 minutes = 1440
     else:
-        uid = msg['from']['id']
+        uid = uid or msg['from']['id']
         minutes = 1440
     user = db_getuser(uid)
     uinfoln = []
@@ -1003,19 +1008,6 @@ def cmd__cmd(expr, chatid, replyid, msg):
     #else:
         #sendmsg('ping', chatid, replyid)
 
-def cmd_hello(expr, chatid, replyid, msg):
-    delta = time.time() - daystart()
-    if delta < 6*3600 or delta >= 23*3600:
-        sendmsg('还不快点睡觉！', chatid, replyid)
-    elif 6*3600 <= delta < 11*3600:
-        sendmsg('早上好', chatid, replyid)
-    elif 11*3600 <= delta < 13*3600:
-        sendmsg('吃饭了没？', chatid, replyid)
-    elif 13*3600 <= delta < 18*3600:
-        sendmsg('该干嘛干嘛！', chatid, replyid)
-    elif 18*3600 <= delta < 23*3600:
-        sendmsg('晚上好！', chatid, replyid)
-
 def cmd__welcome(expr, chatid, replyid, msg):
     if chatid > 0:
         return
@@ -1038,13 +1030,29 @@ def cmd_233(expr, chatid, replyid, msg):
         txt += '\n' + '(🌝%d/🌚%d)' % (wcount, num - wcount)
     sendmsg(txt, chatid, replyid)
 
+def cmd_fig(expr, chatid, replyid, msg):
+    '''/fig <char> Make figure out of moon faces.'''
+    if expr:
+        runapptask('fig', (expr,), (chatid, replyid))
+    else:
+        sendmsg(srandom.choice('🌝🌚'), chatid, replyid)
+
 def cmd_start(expr, chatid, replyid, msg):
     if chatid != -CFG['groupid']:
         sendmsg('This is Orz Digger. It can help you search the long and boring chat log of the ##Orz group.\nSend me /help for help.', chatid, replyid)
 
 def cmd_help(expr, chatid, replyid, msg):
     '''/help Show usage.'''
-    if chatid == -CFG['groupid']:
+    if expr:
+        if expr in COMMANDS:
+            h = COMMANDS[expr].__doc__
+            if h:
+                sendmsg(h, chatid, replyid)
+            else:
+                sendmsg('Help is not available for ' + expr, chatid, replyid)
+        else:
+            sendmsg('Command not found.', chatid, replyid)
+    elif chatid == -CFG['groupid']:
         sendmsg('Full help disabled in this group.', chatid, replyid)
     elif chatid > 0:
         sendmsg('\n'.join(uniq(cmd.__doc__ for cmd in COMMANDS.values() if cmd.__doc__)), chatid, replyid)
@@ -1072,6 +1080,7 @@ COMMANDS = collections.OrderedDict((
 ('lisp', cmd_lisp),
 ('name', cmd_name),
 ('ime', cmd_ime),
+('fig', cmd_fig),
 ('cc', cmd_cc),
 ('quote', cmd_quote),
 ('wyw', cmd_wyw),
@@ -1083,7 +1092,6 @@ COMMANDS = collections.OrderedDict((
 ('t2i', cmd_t2i),
 ('i2t', cmd_i2t),
 ('autoclose', cmd_autoclose),
-('hello', cmd_hello),
 ('233', cmd_233),
 ('start', cmd_start),
 ('help', cmd_help),
@@ -1096,6 +1104,7 @@ PUBLIC = set((
 'lisp',
 'name',
 'ime',
+'fig',
 'cc',
 'wyw',
 'cut',

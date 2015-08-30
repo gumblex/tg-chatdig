@@ -62,7 +62,7 @@
     <thead><tr><th>类型</th><th>占比</th></tr></thead>
     <tbody>
     {% for t in info.types %}
-    <tr><td>{{ t[0] }}</td>
+    <tr><td class="msgtype">{{ t[0] }}</td>
     <td><div class="bar" style="width: {{ t[1] }}">{{ t[1] }}</div></td></tr>
     {% endfor %}
     </tbody>

@@ -13,6 +13,7 @@ import collections
 
 from vendor import zhutil
 from vendor import zhconv
+from vendor import figchar
 from vendor import simpleime
 from vendor import mosesproxy
 from vendor import chinesename
@@ -132,6 +133,16 @@ def cmd_name(expr):
 def cmd_ime(expr):
     return zhconv.convert(simpleime.pinyininput(expr.lower()), 'zh-hans')
 
+def cmd_fig(expr):
+    r = fcgen.render(expr)
+    rl = r.splitlines()
+    if not r:
+        return 'Missing glyph(s).'
+    elif len(rl[0]) < 12 and len(rl) < 15:
+        return r
+    else:
+        return 'Figure too big.'
+
 def cmd_cc(expr):
     if zhconv.issimp(expr):
         return zhconv.convert(expr, 'zh-hant')
@@ -171,6 +182,7 @@ COMMANDS = collections.OrderedDict((
 ('lisp', cmd_lisp),
 ('name', cmd_name),
 ('ime', cmd_ime),
+('fig', cmd_fig),
 ('cc', cmd_cc),
 ('wyw', cmd_wyw),
 ('cut', cmd_cut),
@@ -200,6 +212,7 @@ saythr.start()
 # fx233es = fparser.Parser(numtype='decimal')
 namemodel = chinesename.NameModel('vendor/namemodel.m')
 simpleime.loaddict('vendor/pyindex.dawg', 'vendor/essay.dawg')
+fcgen = figchar.BlockGenerator('vendor/wqy.pkl', '🌝🌚')
 
 try:
     for ln in sys.stdin.buffer:

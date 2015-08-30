@@ -259,4 +259,9 @@ footer {
 .hour {
     width: 2em;
     font-weight: bold;
+    text-align: center;
+}
+.msgtype {
+    width: 3em;
+    text-align: center;
 }

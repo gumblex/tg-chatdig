@@ -70,7 +70,7 @@ vendor/chat.binlm
 vendor/chat.lm
 vendor/chatdict.txt
 vendor/chatlogf.txt
-vendor/context.pkl
+vendor/*.pkl
 vendor/namemodel.m
 vendor/libirc.py
 vendor/*.dawg

@@ -46,3 +46,4 @@ The following components are not in this repo:
 * `/name` , namemodel.m: Part of [Chinese name generator](https://github.com/gumblex/chinesename)
 * `/ime` simpleime.py, pinyinlookup.py, \*.dawg: [Simple Pinyin IME](https://github.com/gumblex/simpleime)
 * zhconv.py, zhcdict.json: [Simplified-Traditional Chinese converter](https://github.com/gumblex/zhconv)
+* vendor/libirc.py: [libirc](https://github.com/m13253/libirc)
