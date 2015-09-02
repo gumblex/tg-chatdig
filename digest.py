@@ -13,12 +13,13 @@ import operator
 import itertools
 import collections
 
-#import jieba
 import jinja2
 import truecaser
+
+#import jieba
 #import jieba.analyse
 from vendor import mosesproxy as jieba
-
+from vendor import zhconv
 
 NAME = '##Orz'
 TITLE = '##Orz 分部喵'
@@ -215,7 +216,7 @@ class DigestComposer:
         for mid, value in self.msgs.items():
             src, text, date, fwd_src, fwd_date, reply_id, media = value
             self.fwd_lookup[(src, date)] = mid
-            tok = self.msgtok[mid] = tuple(self.msgpreprocess(self.tc.truecase(re_url.sub('', text))))
+            tok = self.msgtok[mid] = tuple(self.msgpreprocess(zhconv.convert(self.tc.truecase(re_url.sub('', text)), 'zh-hans')))
             for w in frozenset(t.lower() for t in tok):
                 self.words[w] += 1
         self.words = dict(self.words)

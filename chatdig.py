@@ -51,6 +51,9 @@ last_name TEXT
 conn.execute('CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY, val INTEGER)')
 # conn.execute('CREATE TABLE IF NOT EXISTS words (word TEXT PRIMARY KEY, count INTEGER)')
 
+re_ircaction = re.compile('^\x01ACTION (.*)\x01$')
+re_ircforward = re.compile(r'^\[([^]]+)\] (.*)$|^\*\* ([^ ]+) (.*) \*\*$')
+
 class LRUCache:
 
     def __init__(self, maxlen):
@@ -210,13 +213,30 @@ def irc_forward(msg):
     try:
         checkircconn()
         text = msg.get('text')
-        if text and msg['from']['id'] != CFG['ircbotid']:
+        if text and msg['from']['id'] != CFG['ircbotid'] and not text.startswith('@@@'):
             if 'forward_from' in msg:
-                text = "Fwd %s: %s" % (dc_getufname(msg['forward_from'])[:20], text)
+                fwdname = ''
+                if msg['forward_from']['id'] in (CFG['botid'], CFG['ircbotid']):
+                    rnmatch = re_ircforward.match(msg.get('text', ''))
+                    if rnmatch:
+                        fwdname = rnmatch.group(1) or rnmatch.group(3)
+                        text = rnmatch.group(2) or rnmatch.group(4)
+                fwdname = fwdname or dc_getufname(msg['forward_from'])[:20]
+                text = "Fwd %s: %s" % (fwdname, text)
             elif 'reply_to_message' in msg:
-                text = "%s: %s" % (dc_getufname(msg['reply_to_message']['from'])[:20], text)
-            text = text.split('\n')
-            for ln in text:
+                replname = ''
+                replyu = msg['reply_to_message']['from']
+                if replyu['id'] in (CFG['botid'], CFG['ircbotid']):
+                    rnmatch = re_ircforward.match(msg['reply_to_message'].get('text', ''))
+                    if rnmatch:
+                        replname = rnmatch.group(1) or rnmatch.group(3)
+                replname = replname or dc_getufname(replyu)[:20]
+                text = "%s: %s" % (replname, text)
+            text = text.splitlines()
+            if len(text) > 3:
+                text = text[:3]
+                text[-1] += ' [...]'
+            for ln in text[:3]:
                 ircconn.say(CFG['ircchannel'], '[%s] %s' % (dc_getufname(msg['from'])[:20], ln))
     except Exception:
         logging.exception('Forward a message to IRC failed.')
@@ -382,7 +402,7 @@ def sendmsg(text, chat_id, reply_to_message_id=None):
     if reply_to_message_id and reply_to_message_id < 0:
         reply_to_message_id = None
     m = bot_api('sendMessage', chat_id=chat_id, text=text, reply_to_message_id=reply_to_message_id)
-    if chat_id == -CFG['groupid']:
+    if chat_id == -CFG['groupid'] and reply_to_message_id is not None:
         LOG_Q.put(m)
         irc_send(text, reply_to_message_id=reply_to_message_id)
 
@@ -428,7 +448,7 @@ def forwardmulti_t(message_ids, chat_id, reply_to_message_id=None):
         m = db_getmsg(message_id)
         if m:
             text.append('[%s] %s: %s' % (time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(m[4] + CFG['timezone'] * 3600)), db_getufname(m[1]), m[2]))
-    sendmsg('\n'.join(text) or 'Found nothing.', chat_id, reply_to_message_id)
+    sendmsg('\n'.join(text) or 'Message(s) not found.', chat_id, reply_to_message_id)
 
 @async_func
 def typing(chat_id):
@@ -553,7 +573,11 @@ def processmsg():
         elif cls == 2:
             logmsg(msg)
             if CFG.get('i2t'):
-                sendmsg('[%s] %s' % (msg['_ircuser'], msg['text']), msg['chat']['id'])
+                act = re_ircaction.match(msg['text'])
+                if act:
+                    sendmsg('** %s %s **' % (msg['_ircuser'], act.group(1)), msg['chat']['id'])
+                else:
+                    sendmsg('[%s] %s' % (msg['_ircuser'], msg['text']), msg['chat']['id'])
         elif cls == 3:
             logmsg(msg)
             cmd__welcome('', msg['chat']['id'], msg['message_id'], msg)
@@ -992,8 +1016,9 @@ def cmd__cmd(expr, chatid, replyid, msg):
     if expr == 'killserver':
         APP_P.terminate()
         APP_P = subprocess.Popen(APP_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        sendmsg('Server killed.', chatid, replyid)
-        logging.info('Server killed upon user request.')
+        checkappproc()
+        sendmsg('Server restarted.', chatid, replyid)
+        logging.info('Server restarted upon user request.')
     elif expr == 'commit':
         while 1:
             try:
