@@ -103,7 +103,7 @@ def getupdates():
     global OFFSET, MSG_Q
     while 1:
         try:
-            updates = bot_api('getUpdates', offset=OFFSET, timeout=5)
+            updates = bot_api('getUpdates', offset=OFFSET, timeout=10)
         except Exception as ex:
             logging.exception('Get updates failed.')
             continue
@@ -190,15 +190,18 @@ def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
         checkircconn()
         if reply_to_message_id:
             m = MSG_CACHE.get(reply_to_message_id, {})
-            if 'from' in m:
-                src = db_getufname(m['from']['id'])[:20]
+            logging.debug('Got reply message: ' + str(m))
+            if '_ircuser' in m:
+                text = "%s: %s" % (m['_ircuser'], text)
+            elif 'from' in m:
+                src = dc_getufname(m['from'])[:20]
                 if m['from']['id'] in (CFG['botid'], CFG['ircbotid']):
-                    rtxt = m.get('text', '')
-                    index = rtxt.find('] ')
-                    if index >= 0:
-                        src = rtxt[1:index]
+                    rnmatch = re_ircforward.match(m.get('text', ''))
+                    if rnmatch:
+                        src = rnmatch.group(1) or src
                 text = "%s: %s" % (src, text)
         elif forward_message_id:
+            # not async, so no sqlite3.ProgrammingError in db_*
             m = db_getmsg(forward_message_id)
             if m:
                 text = "Fwd %s: %s" % (db_getufname(m[1])[:20], m[2])
@@ -232,7 +235,8 @@ def irc_forward(msg):
                         replname = rnmatch.group(1) or rnmatch.group(3)
                 replname = replname or dc_getufname(replyu)[:20]
                 text = "%s: %s" % (replname, text)
-            text = text.splitlines()
+            # ignore blank lines
+            text = list(filter(lambda s: s.strip(), text.splitlines()))
             if len(text) > 3:
                 text = text[:3]
                 text[-1] += ' [...]'
@@ -389,8 +393,7 @@ def bot_api_noerr(method, **params):
     except Exception:
         logging.exception('Async bot API failed.')
 
-@async_func
-def sendmsg(text, chat_id, reply_to_message_id=None):
+def sync_sendmsg(text, chat_id, reply_to_message_id=None):
     global LOG_Q
     text = text.strip()
     if not text:
@@ -399,12 +402,19 @@ def sendmsg(text, chat_id, reply_to_message_id=None):
     logging.info('sendMessage(%s): %s' % (len(text), text[:20]))
     if len(text) > 2000:
         text = text[:1999] + '…'
+    reply_id = reply_to_message_id
     if reply_to_message_id and reply_to_message_id < 0:
-        reply_to_message_id = None
-    m = bot_api('sendMessage', chat_id=chat_id, text=text, reply_to_message_id=reply_to_message_id)
-    if chat_id == -CFG['groupid'] and reply_to_message_id is not None:
-        LOG_Q.put(m)
-        irc_send(text, reply_to_message_id=reply_to_message_id)
+        reply_id = None
+    m = bot_api('sendMessage', chat_id=chat_id, text=text, reply_to_message_id=reply_id)
+    if chat_id == -CFG['groupid']:
+        MSG_CACHE[m['message_id']] = m
+        # IRC messages
+        if reply_to_message_id is not None:
+            LOG_Q.put(m)
+            irc_send(text, reply_to_message_id=reply_to_message_id)
+    return m
+
+sendmsg = async_func(sync_sendmsg)
 
 #@async_func
 def forward(message_id, chat_id, reply_to_message_id=None):
@@ -495,7 +505,6 @@ def classify(msg):
     - Ignored message (10)
     - Invalid calling (-1)
     '''
-    logging.debug(msg)
     chat = msg['chat']
     text = msg.get('text', '').strip()
     if text:
@@ -567,7 +576,10 @@ def processmsg():
         if cls == 0:
             if msg['chat']['id'] == -CFG['groupid']:
                 logmsg(msg)
-            command(msg['text'], msg['chat']['id'], msg['message_id'], msg)
+            rid = msg['message_id']
+            if CFG.get('i2t') and '_ircuser' in msg:
+                rid = sync_sendmsg('[%s] %s' % (msg['_ircuser'], msg['text']), msg['chat']['id'])['message_id']
+            command(msg['text'], msg['chat']['id'], rid, msg)
         elif cls == 1:
             logmsg(msg)
         elif cls == 2:
@@ -631,6 +643,7 @@ def db_getufname(uid):
     return name
 
 def dc_getufname(user, maxlen=100):
+    USER_CACHE[user['id']] = (user.get('username'), user.get('first_name'), user.get('last_name'))
     name = user['first_name']
     if 'last_name' in user:
         name += ' ' + user['last_name']
@@ -962,7 +975,7 @@ def cmd_do(expr, chatid, replyid, msg):
         ('look', 'ಠ_ಠ'),
         ('boom', '💥'),
         ('tweet', '🐦'),
-        ('blink', '👁'),
+        ('blink', '👀'),
         ('see-no-evil', '🙈'),
         ('hear-no-evil', '🙉'),
         ('speak-no-evil', '🙊'),
@@ -1193,7 +1206,7 @@ try:
         try:
             processmsg()
         except Exception as ex:
-            logging.exception('Process a message failed.')
+            logging.exception('Failed to process a message.')
             continue
 finally:
     while 1:
