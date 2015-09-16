@@ -38,6 +38,7 @@ re_word = re.compile(r"\w+", re.UNICODE)
 re_tag = re.compile(r"#\w+", re.UNICODE)
 re_at = re.compile('@[A-Za-z][A-Za-z0-9_]{4,}')
 re_url = re.compile(r"(^|[\s.:;?\-\]<\(])(https?://[-\w;/?:@&=+$\|\_.!~*\|'()\[\]%#,]+[\w/#](\(\))?)(?=$|[\s',\|\(\).:;?\-\[\]>\)])")
+re_ircaction = re.compile('^\x01ACTION (.*)\x01$')
 _ig1 = operator.itemgetter(1)
 
 MEDIA_TYPES = {
@@ -111,6 +112,13 @@ def getwday(t=None):
         t = time.time()
     t += TIMEZONE
     return ('周一','周二','周三','周四','周五','周六','周日')[time.gmtime(t)[6]]
+
+def stripreaction(text):
+    act = re_ircaction.match(text)
+    if act:
+        return act.group(1)
+    else:
+        return text
 
 class DirectWeightedGraph:
     d = 0.85
@@ -216,7 +224,7 @@ class DigestComposer:
         for mid, value in self.msgs.items():
             src, text, date, fwd_src, fwd_date, reply_id, media = value
             self.fwd_lookup[(src, date)] = mid
-            tok = self.msgtok[mid] = tuple(self.msgpreprocess(zhconv.convert(self.tc.truecase(re_url.sub('', text)), 'zh-hans')))
+            tok = self.msgtok[mid] = tuple(self.msgpreprocess(zhconv.convert(self.tc.truecase(re_url.sub('', stripreaction(text))), 'zh-hans')))
             for w in frozenset(t.lower() for t in tok):
                 self.words[w] += 1
         self.words = dict(self.words)
@@ -319,7 +327,7 @@ class DigestComposer:
                 text = msg[1]
                 if len(text) > 500:
                     text = text[:500] + '…'
-                hotmsg.append((mid, text, msg[0], db_getfirstname(msg[0], json.loads(msg[6] or '{}')), strftime('%H:%M:%S', msg[2])))
+                hotmsg.append((mid, stripreaction(text), msg[0], db_getfirstname(msg[0], json.loads(msg[6] or '{}')), strftime('%H:%M:%S', msg[2])))
             yield (kwds, hotmsg)
 
     def tags(self):

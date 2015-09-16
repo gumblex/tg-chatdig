@@ -524,11 +524,11 @@ def classify(msg):
 
     if 'title' in chat:
         # Group chat
+        if 'new_chat_participant' in msg:
+            return 3
         if chat['id'] == -CFG['groupid']:
             if msg['from']['id'] == CFG['botid']:
                 return 10
-            elif 'new_chat_participant' in msg:
-                return 3
             else:
                 return 1
         else:
@@ -868,7 +868,7 @@ def cmd_lisp(expr, chatid, replyid, msg):
     if expr:
         runapptask('lisp', (expr,), (chatid, replyid))
     else:
-        sendmsg('Syntax error. Usage: ' + cmd_py.__doc__, chatid, replyid)
+        sendmsg('Syntax error. Usage: ' + cmd_lisp.__doc__, chatid, replyid)
 
 def cmd_name(expr, chatid, replyid, msg):
     '''/name [pinyin] Get a Chinese name.'''
@@ -1112,7 +1112,7 @@ COMMANDS = collections.OrderedDict((
 ('digest', cmd_digest),
 ('stat', cmd_stat),
 #('calc', cmd_calc),
-('calc', cmd_py),
+#('calc', cmd_py),
 ('py', cmd_py),
 ('bf', cmd_bf),
 ('lisp', cmd_lisp),
