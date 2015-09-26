@@ -2,10 +2,9 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
+import json
 import socket
 from subprocess import Popen
-
-from . import umsgpack
 
 _curpath = os.path.normpath(
     os.path.join(os.getcwd(), os.path.dirname(__file__)))
@@ -14,18 +13,20 @@ startserver_path = os.path.join(_curpath, 'startserver')
 filename = '/home/gumble/server/pyapp/data/mosesserver.sock'
 RESTART = True
 
+dumpsjson = lambda x: json.dumps(x).encode('utf-8')
+loadsjson = lambda x: json.loads(x.decode('utf-8'))
 
 def recvall(sock, buf=1024):
     data = sock.recv(buf)
     alldata = [data]
-    while data and data[-1] != 0xc1:
+    while data and data[-1] != 10:
         data = sock.recv(buf)
         alldata.append(data)
     return b''.join(alldata)[:-1]
 
 
 def sendall(sock, data):
-    sock.sendall(data + b'\xc1')
+    sock.sendall(data + b'\n')
 
 
 def receive(data, autorestart=None):
@@ -52,59 +53,59 @@ def receive(data, autorestart=None):
 
 
 def translate(text, mode, withcount=False, withinput=True, align=True):
-    return umsgpack.loads(receive(umsgpack.dumps((mode, text, withcount, withinput, align))))
+    return loadsjson(receive(dumpsjson((mode, text, withcount, withinput, align))))
 
 
 def rawtranslate(text, mode, withcount=False):
-    return umsgpack.loads(receive(umsgpack.dumps((mode + '.raw', text))))
+    return loadsjson(receive(dumpsjson((mode + '.raw', text))))
 
 
 def cut(*args, **kwargs):
-    return umsgpack.loads(receive(umsgpack.dumps(('cut', args, kwargs))))
+    return loadsjson(receive(dumpsjson(('cut', args, kwargs))))
 
 
 def cut_for_search(*args, **kwargs):
-    return umsgpack.loads(receive(umsgpack.dumps(('cut_for_search', args, kwargs))))
+    return loadsjson(receive(dumpsjson(('cut_for_search', args, kwargs))))
 
 
 def tokenize(*args, **kwargs):
-    return umsgpack.loads(receive(umsgpack.dumps(('tokenize', args, kwargs))))
+    return loadsjson(receive(dumpsjson(('tokenize', args, kwargs))))
 
 
 class jiebazhc:
 
     @staticmethod
     def cut(*args, **kwargs):
-        return umsgpack.loads(receive(umsgpack.dumps(('jiebazhc.cut', args, kwargs))))
+        return loadsjson(receive(dumpsjson(('jiebazhc.cut', args, kwargs))))
 
     @staticmethod
     def cut_for_search(*args, **kwargs):
-        return umsgpack.loads(receive(umsgpack.dumps(('jiebazhc.cut_for_search', args, kwargs))))
+        return loadsjson(receive(dumpsjson(('jiebazhc.cut_for_search', args, kwargs))))
 
     @staticmethod
     def tokenize(*args, **kwargs):
-        return umsgpack.loads(receive(umsgpack.dumps(('jiebazhc.tokenize', args, kwargs))))
+        return loadsjson(receive(dumpsjson(('jiebazhc.tokenize', args, kwargs))))
 
 
 def add_word(*args, **kwargs):
-    receive(umsgpack.dumps(('add_word', args, kwargs)))
+    receive(dumpsjson(('add_word', args, kwargs)))
 
 
 def load_userdict(*args):
-    receive(umsgpack.dumps(('load_userdict', args)))
+    receive(dumpsjson(('load_userdict', args)))
 
 
 def set_dictionary(*args):
-    receive(umsgpack.dumps(('set_dictionary', args)))
+    receive(dumpsjson(('set_dictionary', args)))
 
 
 def stopserver():
-    receive(umsgpack.dumps(('stopserver',)), False)
+    receive(dumpsjson(('stopserver',)), False)
 
 
 def ping(autorestart=False):
     try:
-        result = receive(umsgpack.dumps(('ping',)), autorestart)
+        result = receive(dumpsjson(('ping',)), autorestart)
         return result == b'pong'
     except Exception:
         return False

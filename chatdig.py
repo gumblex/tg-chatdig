@@ -24,7 +24,9 @@ __version__ = '1.2'
 
 MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'voice', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created', '_ircuser'))
 
-logging.basicConfig(stream=sys.stdout, format='# %(asctime)s [%(levelname)s] %(message)s', level=logging.INFO)
+loglevel = logging.DEBUG if sys.argv[-1] == '-d' else logging.INFO
+
+logging.basicConfig(stream=sys.stdout, format='# %(asctime)s [%(levelname)s] %(message)s', level=loglevel)
 
 HSession = requests.Session()
 USERAGENT = 'TgChatDiggerBot/%s %s' % (__version__, HSession.headers["User-Agent"])
@@ -161,6 +163,8 @@ def checkircconn():
     if not ircconn or not ircconn.sock:
         ircconn = libirc.IRCConnection()
         ircconn.connect((CFG['ircserver'], CFG['ircport']), use_ssl=CFG['ircssl'])
+        if CFG.get('ircpass'):
+            ircconn.setpass(CFG['ircpass'])
         ircconn.setnick(CFG['ircnick'])
         ircconn.setuser(CFG['ircnick'], CFG['ircnick'])
         ircconn.join(CFG['ircchannel'])
