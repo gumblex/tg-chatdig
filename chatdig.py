@@ -174,7 +174,7 @@ def getircupd():
     global MSG_Q, IRCOFFSET
     while 1:
         checkircconn()
-        line = ircconn.parse(block=False)
+        line = ircconn.parse(block=True)
         if line and line["cmd"] == "PRIVMSG":
             if line["dest"] != CFG['ircnick'] and not re.match(CFG['ircbanre'], line["nick"]):
                 msg = {
