@@ -29,10 +29,11 @@ def indexword(word):
 
 packvals = lambda values: struct.pack('>' + 'H'*len(values), *values)
 
+stopwords = frozenset(map(indexword, map(str.strip, open('stopwords.txt', 'r', encoding='utf-8'))))
 wd = collections.defaultdict(set)
 for ln in sys.stdin:
     ln = set(filter(None, (indexword(word) for word in jieba.cut(ln.strip()))))
-    for word in ln:
+    for word in ln.difference(stopwords):
         wd[word] |= ln
 
 pickle.dump(tuple(packvals(sorted(wd.get(k, ()))) for k in range(len(wl))), open('context.pkl', 'wb'))
