@@ -211,7 +211,18 @@ def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
                 text = "Fwd %s: %s" % (db_getufname(m[1])[:20], m[2])
         text = text.strip()
         if text.count('\n') < 1:
+            curtime = time.time()
+            if curtime == irc_send.lasttime:
+                irc_send.lastfreq += 1
+                if CFG['ircfreq'] > 0 and irc_send.lastfreq > CFG['ircfreq']:
+                    irc_send.lasttime = curtime
+                    return
+            else:
+                irc_send.lastfreq = 0
+                irc_send.lasttime = curtime
             ircconn.say(CFG['ircchannel'], text)
+irc_send.lasttime = time.time()
+irc_send.lastfreq += 0
 
 @async_func
 def irc_forward(msg):
