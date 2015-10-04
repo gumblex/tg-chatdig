@@ -218,9 +218,13 @@ def irc_forward(msg):
     if not ircconn:
         return
     try:
+        if msg['from']['id'] == CFG['ircbotid']:
+            return
         checkircconn()
         text = msg.get('text')
-        if text and msg['from']['id'] != CFG['ircbotid'] and not text.startswith('@@@'):
+        if not text:
+            text = servemedia(msg)
+        if text and not text.startswith('@@@'):
             if 'forward_from' in msg:
                 fwdname = ''
                 if msg['forward_from']['id'] in (CFG['botid'], CFG['ircbotid']):
@@ -469,6 +473,22 @@ def typing(chat_id):
     logging.info('sendChatAction: %r' % chat_id)
     bot_api('sendChatAction', chat_id=chat_id, action='typing')
 
+def getfile(file_id):
+    logging.info('getFile: %r' % file_id)
+    return bot_api('getFile', file_id=file_id)
+
+def retrieve(url, filename, raisestatus=True):
+    # NOTE the stream=True parameter
+    r = requests.get(url, stream=True)
+    if raisestatus:
+        r.raise_for_status()
+    with open(filename, 'wb') as f:
+        for chunk in r.iter_content(chunk_size=1024):
+            if chunk: # filter out keep-alive new chunks
+                f.write(chunk)
+        f.flush()
+    return r.status_code
+
 #def extract_tag(s):
     #words = []
     #tags = []
@@ -497,7 +517,7 @@ def uniq(seq): # Dave Kirby
 def classify(msg):
     '''
     Classify message type:
-    
+
     - Command: (0)
             All messages that start with a slash ‘/’ (see Commands above)
             Messages that @mention the bot by username
@@ -605,6 +625,57 @@ def processmsg():
             logmsg(LOG_Q.get_nowait())
         except queue.Empty:
             pass
+
+def cachemedia(msg):
+    '''
+    Download specified media if not exist.
+    '''
+    mt = msg.keys() & frozenset(('audio', 'document', 'sticker', 'video', 'voice'))
+    file_ext = ''
+    if mt:
+        file_id = msg[mt]['file_id']
+        file_size = msg[mt].get('file_size')
+        if mt == 'sticker':
+            file_ext = '.webp'
+    elif 'photo' in msg:
+        photo = max(msg['photo'], key=lambda x: x['width'])
+        file_id = photo['file_id']
+        file_size = photo.get('file_size')
+        file_ext = '.jpg'
+    fp = getfile(file_id)
+    file_size = fp.get('file_size') or file_size
+    file_path = fp.get('file_path')
+    if not file_path:
+        raise BotAPIFailed("can't get file_path for " + file_id)
+    file_ext = os.path.splitext(file_path)[1] or file_ext
+    cachename = file_id + file_ext
+    fpath = os.path.join(CFG['cachepath'], cachename)
+    try:
+        if os.path.isfile(fpath) and os.path.getsize(fpath) == file_size:
+            return (cachename, 304)
+    except Exception:
+        pass
+    return (cachename, retrieve(URL_FILE + file_path, fpath))
+
+def servemedia(msg):
+    '''
+    Reply type and link of media. This only generates links for photos.
+    '''
+    keys = tuple(msg.keys() & frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'voice', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created')))
+    if not keys:
+        return ''
+    ret = '<%s>' % keys[0]
+    if 'photo' not in msg:
+        return ret
+    servemode = CFG.get('servemedia')
+    if servemode:
+        fname, code = cachemedia(msg)
+        if servemode == 'self':
+            ret += ' %s%s' % (CFG['serveurl'], fname)
+        elif servemode == 'vim-cn':
+            r = requests.post('http://img.vim-cn.com/', files={'name': open(os.path.join(CFG['cachepath'], fname), 'rb')})
+            ret += ' ' + r.text
+    return ret
 
 def autoclose(msg):
     openbrckt = ('([{（［｛⦅〚⦃“‘‹«「〈《【〔⦗『〖〘｢⟦⟨⟪⟮⟬⌈⌊⦇⦉❛❝❨❪❴❬❮❰❲'
@@ -1169,6 +1240,7 @@ USER_CACHE = LRUCache(20)
 MSG_CACHE = LRUCache(10)
 CFG = json.load(open('config.json'))
 URL = 'https://api.telegram.org/bot%s/' % CFG['token']
+URL_FILE = 'https://api.telegram.org/file/bot%s/' % CFG['token']
 
 # Initialize messages in database
 
