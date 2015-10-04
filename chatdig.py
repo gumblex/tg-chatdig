@@ -16,6 +16,7 @@ import threading
 import functools
 import subprocess
 import collections
+import unicodedata
 
 import requests
 from vendor import libirc
@@ -1065,7 +1066,11 @@ def cmd_do(expr, chatid, replyid, msg):
     elif expr == 'help':
         sendmsg(', '.join(actions.keys()), chatid, replyid)
     else:
-        sendmsg('Something happened.', chatid, replyid)
+        try:
+            res = unicodedata.lookup(expr)
+            sendmsg(res, chatid, replyid)
+        except KeyError:
+            sendmsg('Something happened.', chatid, replyid)
 
 def cmd_t2i(expr, chatid, replyid, msg):
     global CFG
