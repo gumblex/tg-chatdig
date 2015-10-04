@@ -1069,7 +1069,13 @@ def cmd_do(expr, chatid, replyid, msg):
         try:
             res = unicodedata.lookup(expr)
             sendmsg(res, chatid, replyid)
+            return
         except KeyError:
+            pass
+        if len(expr) == 1:
+            res = unicodedata.name(expr)
+            sendmsg(res, chatid, replyid)
+        else:
             sendmsg('Something happened.', chatid, replyid)
 
 def cmd_t2i(expr, chatid, replyid, msg):
