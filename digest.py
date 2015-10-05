@@ -36,7 +36,7 @@ USER_CACHE = {}
 
 re_word = re.compile(r"\w+", re.UNICODE)
 re_tag = re.compile(r"#\w+", re.UNICODE)
-re_at = re.compile('@[A-Za-z][A-Za-z0-9_]{4,}')
+re_at = re.compile('@[A-Za-z][A-Za-z0-9_]{4,31}')
 re_url = re.compile(r"(^|[\s.:;?\-\]<\(])(https?://[-\w;/?:@&=+$\|\_.!~*\|'()\[\]%#,]+[\w/#](\(\))?)(?=$|[\s',\|\(\).:;?\-\[\]>\)])")
 re_ircaction = re.compile('^\x01ACTION (.*)\x01$')
 _ig1 = operator.itemgetter(1)
