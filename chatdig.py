@@ -191,6 +191,18 @@ def getircupd():
                 IRCOFFSET += 1
         time.sleep(.5)
 
+def ircconn_say(dest, msg, sendnow=True):
+    MIN_INT = 0.2
+    if not ircconn:
+        return
+    curtime = time.time()
+    delta = curtime - ircconn_say.lasttime
+    if delta < MIN_INT:
+        time.sleep(MIN_INT - delta)
+    ircconn.say(dest, msg, sendnow)
+    ircconn_say.lasttime = time.time()
+ircconn_say.lasttime = 0
+
 def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
     if ircconn:
         checkircconn()
@@ -213,18 +225,7 @@ def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
                 text = "Fwd %s: %s" % (db_getufname(m[1])[:20], m[2])
         text = text.strip()
         if text.count('\n') < 1:
-            curtime = time.time()
-            if curtime == irc_send.lasttime:
-                irc_send.lastfreq += 1
-                if CFG['ircfreq'] > 0 and irc_send.lastfreq > CFG['ircfreq']:
-                    irc_send.lasttime = curtime
-                    return
-            else:
-                irc_send.lastfreq = 0
-                irc_send.lasttime = curtime
-            ircconn.say(CFG['ircchannel'], text)
-irc_send.lasttime = time.time()
-irc_send.lastfreq += 0
+            ircconn_say(CFG['ircchannel'], text)
 
 @async_func
 def irc_forward(msg):
@@ -266,7 +267,7 @@ def irc_forward(msg):
                 text = text[:3]
                 text[-1] += ' [...]'
             for ln in text[:3]:
-                ircconn.say(CFG['ircchannel'], '[%s] %s' % (dc_getufname(msg['from'])[:20], ln))
+                ircconn_say(CFG['ircchannel'], '[%s] %s' % (dc_getufname(msg['from'])[:20], ln))
     except Exception:
         logging.exception('Forward a message to IRC failed.')
 
