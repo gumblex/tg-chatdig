@@ -1,6 +1,8 @@
 # tg-chatdig
 Dig into long and boring Telegram group chat logs.
 
+For a simpler Telegram-IRC relay bot, see [tg-irc-relay](https://github.com/gumblex/tg-irc-relay)
+
 ## chatdig.py
 
 Main script, handles a lot of commands. Uses a SQLite 3 database to store messages.
