@@ -593,6 +593,8 @@ def processmsg():
         msg = d['message']
         if 'text' in msg:
             msg['text'] = msg['text'].replace('\xa0', ' ')
+        elif 'caption' in msg:
+            msg['text'] = msg['caption'].replace('\xa0', ' ')
         MSG_CACHE[msg['message_id']] = msg
         cls = classify(msg)
         logging.debug('Classified as: %s', cls)
