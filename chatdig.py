@@ -16,13 +16,15 @@ import threading
 import functools
 import subprocess
 import collections
+import unicodedata
 
 import requests
 from vendor import libirc
 
-__version__ = '1.2'
+__version__ = '1.4'
 
-MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'voice', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created', '_ircuser'))
+MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'voice', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created'))
+EXT_MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'voice', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created', '_ircuser'))
 
 loglevel = logging.DEBUG if sys.argv[-1] == '-d' else logging.INFO
 
@@ -229,9 +231,17 @@ def irc_forward(msg):
     if not ircconn:
         return
     try:
+        if msg['from']['id'] == CFG['ircbotid']:
+            return
         checkircconn()
-        text = msg.get('text')
-        if text and msg['from']['id'] != CFG['ircbotid'] and not text.startswith('@@@'):
+        text = msg.get('text', '')
+        mkeys = tuple(msg.keys() & MEDIA_TYPES)
+        if mkeys:
+            if text:
+                text += ' ' + servemedia(msg)
+            else:
+                text = servemedia(msg)
+        if text and not text.startswith('@@@'):
             if 'forward_from' in msg:
                 fwdname = ''
                 if msg['forward_from']['id'] in (CFG['botid'], CFG['ircbotid']):
@@ -426,7 +436,7 @@ def sync_sendmsg(text, chat_id, reply_to_message_id=None):
         # IRC messages
         if reply_to_message_id is not None:
             LOG_Q.put(m)
-            irc_send(text, reply_to_message_id=reply_to_message_id)
+            irc_send(text, reply_to_message_id)
     return m
 
 sendmsg = async_func(sync_sendmsg)
@@ -480,6 +490,22 @@ def typing(chat_id):
     logging.info('sendChatAction: %r' % chat_id)
     bot_api('sendChatAction', chat_id=chat_id, action='typing')
 
+def getfile(file_id):
+    logging.info('getFile: %r' % file_id)
+    return bot_api('getFile', file_id=file_id)
+
+def retrieve(url, filename, raisestatus=True):
+    # NOTE the stream=True parameter
+    r = requests.get(url, stream=True)
+    if raisestatus:
+        r.raise_for_status()
+    with open(filename, 'wb') as f:
+        for chunk in r.iter_content(chunk_size=1024):
+            if chunk: # filter out keep-alive new chunks
+                f.write(chunk)
+        f.flush()
+    return r.status_code
+
 #def extract_tag(s):
     #words = []
     #tags = []
@@ -508,7 +534,7 @@ def uniq(seq): # Dave Kirby
 def classify(msg):
     '''
     Classify message type:
-    
+
     - Command: (0)
             All messages that start with a slash ‘/’ (see Commands above)
             Messages that @mention the bot by username
@@ -583,6 +609,8 @@ def processmsg():
         msg = d['message']
         if 'text' in msg:
             msg['text'] = msg['text'].replace('\xa0', ' ')
+        elif 'caption' in msg:
+            msg['text'] = msg['caption'].replace('\xa0', ' ')
         MSG_CACHE[msg['message_id']] = msg
         cls = classify(msg)
         logging.debug('Classified as: %s', cls)
@@ -616,6 +644,57 @@ def processmsg():
             logmsg(LOG_Q.get_nowait())
         except queue.Empty:
             pass
+
+def cachemedia(msg):
+    '''
+    Download specified media if not exist.
+    '''
+    mt = msg.keys() & frozenset(('audio', 'document', 'sticker', 'video', 'voice'))
+    file_ext = ''
+    if mt:
+        file_id = msg[mt]['file_id']
+        file_size = msg[mt].get('file_size')
+        if mt == 'sticker':
+            file_ext = '.webp'
+    elif 'photo' in msg:
+        photo = max(msg['photo'], key=lambda x: x['width'])
+        file_id = photo['file_id']
+        file_size = photo.get('file_size')
+        file_ext = '.jpg'
+    fp = getfile(file_id)
+    file_size = fp.get('file_size') or file_size
+    file_path = fp.get('file_path')
+    if not file_path:
+        raise BotAPIFailed("can't get file_path for " + file_id)
+    file_ext = os.path.splitext(file_path)[1] or file_ext
+    cachename = file_id + file_ext
+    fpath = os.path.join(CFG['cachepath'], cachename)
+    try:
+        if os.path.isfile(fpath) and os.path.getsize(fpath) == file_size:
+            return (cachename, 304)
+    except Exception:
+        pass
+    return (cachename, retrieve(URL_FILE + file_path, fpath))
+
+def servemedia(msg):
+    '''
+    Reply type and link of media. This only generates links for photos.
+    '''
+    keys = tuple(msg.keys() & MEDIA_TYPES)
+    if not keys:
+        return ''
+    ret = '<%s>' % keys[0]
+    if 'photo' not in msg:
+        return ret
+    servemode = CFG.get('servemedia')
+    if servemode:
+        fname, code = cachemedia(msg)
+        if servemode == 'self':
+            ret += ' %s%s' % (CFG['serveurl'], fname)
+        elif servemode == 'vim-cn':
+            r = requests.post('http://img.vim-cn.com/', files={'name': open(os.path.join(CFG['cachepath'], fname), 'rb')})
+            ret += ' ' + r.text
+    return ret
 
 def autoclose(msg):
     openbrckt = ('([{（［｛⦅〚⦃“‘‹«「〈《【〔⦗『〖〘｢⟦⟨⟪⟮⟬⌈⌊⦇⦉❛❝❨❪❴❬❮❰❲'
@@ -680,7 +759,7 @@ def db_getuidbyname(username):
 def logmsg(d, iorignore=False):
     src = db_adduser(d['from'])[0]
     text = d.get('text') or d.get('caption', '')
-    media = {k:d[k] for k in MEDIA_TYPES.intersection(d.keys())}
+    media = {k:d[k] for k in EXT_MEDIA_TYPES.intersection(d.keys())}
     fwd_src = db_adduser(d['forward_from'])[0] if 'forward_from' in d else None
     reply_id = d['reply_to_message']['message_id'] if 'reply_to_message' in d else None
     into = 'INSERT OR IGNORE INTO' if iorignore else 'REPLACE INTO'
@@ -988,6 +1067,7 @@ def cmd_do(expr, chatid, replyid, msg):
         ('flip', '（╯°□°）╯︵ ┻━┻'),
         ('homo', '┌（┌　＾o＾）┐'),
         ('look', 'ಠ_ಠ'),
+        ('cn', '[citation needed]'),
         ('boom', '💥'),
         ('tweet', '🐦'),
         ('blink', '👀'),
@@ -1005,25 +1085,35 @@ def cmd_do(expr, chatid, replyid, msg):
     elif expr == 'help':
         sendmsg(', '.join(actions.keys()), chatid, replyid)
     else:
-        sendmsg('Something happened.', chatid, replyid)
+        try:
+            res = unicodedata.lookup(expr)
+            sendmsg(res, chatid, replyid)
+            return
+        except KeyError:
+            pass
+        if len(expr) == 1:
+            res = unicodedata.name(expr)
+            sendmsg(res, chatid, replyid)
+        else:
+            sendmsg('Something happened.', chatid, replyid)
 
 def cmd_t2i(expr, chatid, replyid, msg):
     global CFG
     if msg['chat']['id'] == -CFG['groupid']:
-        if CFG.get('t2i'):
+        if expr == 'off' or CFG.get('t2i'):
             CFG['t2i'] = False
             sendmsg('Telegram to IRC forwarding disabled.', chatid, replyid)
-        else:
+        elif expr == 'on' or not CFG.get('t2i'):
             CFG['t2i'] = True
             sendmsg('Telegram to IRC forwarding enabled.', chatid, replyid)
 
 def cmd_i2t(expr, chatid, replyid, msg):
     global CFG
     if msg['chat']['id'] == -CFG['groupid']:
-        if CFG.get('i2t'):
+        if expr == 'off' or CFG.get('i2t'):
             CFG['i2t'] = False
             sendmsg('IRC to Telegram forwarding disabled.', chatid, replyid)
-        else:
+        elif expr == 'on' or not CFG.get('i2t'):
             CFG['i2t'] = True
             sendmsg('IRC to Telegram forwarding enabled.', chatid, replyid)
 
@@ -1180,6 +1270,7 @@ USER_CACHE = LRUCache(20)
 MSG_CACHE = LRUCache(10)
 CFG = json.load(open('config.json'))
 URL = 'https://api.telegram.org/bot%s/' % CFG['token']
+URL_FILE = 'https://api.telegram.org/file/bot%s/' % CFG['token']
 
 # Initialize messages in database
 
