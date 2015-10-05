@@ -21,7 +21,7 @@ import unicodedata
 import requests
 from vendor import libirc
 
-__version__ = '1.2'
+__version__ = '1.4'
 
 MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'voice', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created', '_ircuser'))
 
@@ -1049,6 +1049,7 @@ def cmd_do(expr, chatid, replyid, msg):
         ('flip', '（╯°□°）╯︵ ┻━┻'),
         ('homo', '┌（┌　＾o＾）┐'),
         ('look', 'ಠ_ಠ'),
+        ('cn', '[citation needed]'),
         ('boom', '💥'),
         ('tweet', '🐦'),
         ('blink', '👀'),
@@ -1081,20 +1082,20 @@ def cmd_do(expr, chatid, replyid, msg):
 def cmd_t2i(expr, chatid, replyid, msg):
     global CFG
     if msg['chat']['id'] == -CFG['groupid']:
-        if CFG.get('t2i'):
+        if expr == 'off' or CFG.get('t2i'):
             CFG['t2i'] = False
             sendmsg('Telegram to IRC forwarding disabled.', chatid, replyid)
-        else:
+        elif expr == 'on' or not CFG.get('t2i'):
             CFG['t2i'] = True
             sendmsg('Telegram to IRC forwarding enabled.', chatid, replyid)
 
 def cmd_i2t(expr, chatid, replyid, msg):
     global CFG
     if msg['chat']['id'] == -CFG['groupid']:
-        if CFG.get('i2t'):
+        if expr == 'off' or CFG.get('i2t'):
             CFG['i2t'] = False
             sendmsg('IRC to Telegram forwarding disabled.', chatid, replyid)
-        else:
+        elif expr == 'on' or not CFG.get('i2t'):
             CFG['i2t'] = True
             sendmsg('IRC to Telegram forwarding enabled.', chatid, replyid)
 
