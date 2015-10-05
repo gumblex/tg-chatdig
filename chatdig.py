@@ -23,7 +23,8 @@ from vendor import libirc
 
 __version__ = '1.4'
 
-MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'voice', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created', '_ircuser'))
+MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'voice', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created'))
+EXT_MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'voice', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created', '_ircuser'))
 
 loglevel = logging.DEBUG if sys.argv[-1] == '-d' else logging.INFO
 
@@ -222,9 +223,13 @@ def irc_forward(msg):
         if msg['from']['id'] == CFG['ircbotid']:
             return
         checkircconn()
-        text = msg.get('text')
-        if not text:
-            text = servemedia(msg)
+        text = msg.get('text', '')
+        mkeys = tuple(msg.keys() & MEDIA_TYPES)
+        if mkeys:
+            if text:
+                text += ' ' + servemedia(msg)
+            else:
+                text = servemedia(msg)
         if text and not text.startswith('@@@'):
             if 'forward_from' in msg:
                 fwdname = ''
@@ -420,7 +425,7 @@ def sync_sendmsg(text, chat_id, reply_to_message_id=None):
         # IRC messages
         if reply_to_message_id is not None:
             LOG_Q.put(m)
-            irc_send(text, reply_to_message_id=reply_to_message_id)
+            irc_send(text, reply_to_message_id)
     return m
 
 sendmsg = async_func(sync_sendmsg)
@@ -664,7 +669,7 @@ def servemedia(msg):
     '''
     Reply type and link of media. This only generates links for photos.
     '''
-    keys = tuple(msg.keys() & frozenset(('audio', 'document', 'photo', 'sticker', 'video', 'voice', 'contact', 'location', 'new_chat_participant', 'left_chat_participant', 'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created')))
+    keys = tuple(msg.keys() & MEDIA_TYPES)
     if not keys:
         return ''
     ret = '<%s>' % keys[0]
@@ -743,7 +748,7 @@ def db_getuidbyname(username):
 def logmsg(d, iorignore=False):
     src = db_adduser(d['from'])[0]
     text = d.get('text') or d.get('caption', '')
-    media = {k:d[k] for k in MEDIA_TYPES.intersection(d.keys())}
+    media = {k:d[k] for k in EXT_MEDIA_TYPES.intersection(d.keys())}
     fwd_src = db_adduser(d['forward_from'])[0] if 'forward_from' in d else None
     reply_id = d['reply_to_message']['message_id'] if 'reply_to_message' in d else None
     into = 'INSERT OR IGNORE INTO' if iorignore else 'REPLACE INTO'
