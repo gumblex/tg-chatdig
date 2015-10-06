@@ -36,13 +36,13 @@ def async_command(obj):
 def getsaying():
     global SAY_P, SAY_Q
     while 1:
-        say = getsayingbytext()
+        say = getsayingbytext(mode='')
         SAY_Q.put(say)
 
-def getsayingbytext(text=''):
+def getsayingbytext(text='', mode='r'):
     global SAY_P
     with SAY_LCK:
-        text = ' '.join(mosesproxy.cut(zhconv.convert(text, 'zh-hans'), HMM=False)[:60]).strip().encode('utf-8') + b'\n'
+        text = (mode + ' '.join(mosesproxy.cut(zhconv.convert(text, 'zh-hans'), HMM=False)[:60]).strip()).encode('utf-8') + b'\n'
         try:
             SAY_P.stdin.write(text)
             SAY_P.stdin.flush()
@@ -173,7 +173,10 @@ def cmd_say():
     return SAY_Q.get() or 'ERROR_BRAIN_NOT_CONNECTED'
 
 def cmd_reply(expr):
-    return getsayingbytext(expr) or 'ERROR_BRAIN_NOT_CONNECTED'
+    return getsayingbytext(expr, 'r') or 'ERROR_BRAIN_NOT_CONNECTED'
+
+def cmd_cont(expr):
+    return getsayingbytext(expr, 'c') or 'ERROR_BRAIN_NOT_CONNECTED'
 
 COMMANDS = collections.OrderedDict((
 ('calc', cmd_calc),
@@ -187,7 +190,8 @@ COMMANDS = collections.OrderedDict((
 ('wyw', cmd_wyw),
 ('cut', cmd_cut),
 ('say', cmd_say),
-('reply', cmd_reply)
+('reply', cmd_reply),
+('cont', cmd_cont)
 ))
 
 MSG_Q = queue.Queue()

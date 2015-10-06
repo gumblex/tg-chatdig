@@ -11,6 +11,8 @@ import random
 import itertools
 import functools
 
+srandom = random.SystemRandom()
+
 RE_UCJK = re.compile(
     '([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U0001F000-\U0001F8AD\U00020000-\U0002A6D6]+)')
 
@@ -51,7 +53,7 @@ def weighted_choice_king(weights):
     winweight = 0
     for i, w in enumerate(weights):
         total += w
-        if random.random() * total < w:
+        if srandom.random() * total < w:
             winner = i
             winweight = w
     return winner, winweight
@@ -78,19 +80,27 @@ def joinword(words):
             last = True
 
 
-def generate_word(lm, order, ctxvoc):
+def generate_word(lm, order, ctxvoc, cont=()):
     out = []
-    idx, w = weighted_choice_king(10**lm.score(c, 1, 0) for c in ctxvoc)
+    stack = list(cont)
+    if stack:
+        history = ' '.join(stack) + ' '
+        idx, w = weighted_choice_king(
+            10**lm.score(history + c, 1, 0) for c in ctxvoc)
+    else:
+        idx, w = weighted_choice_king(10**lm.score(c, 1, 0) for c in ctxvoc)
     # sys.stdout.buffer.write(ctxvoc[idx].encode('utf-8'))
     out.append(ctxvoc[idx])
+    stack.append(ctxvoc[idx])
     while 1:
-        bos = (len(out) <= order + 2)
-        history = ' '.join(out[-order - 2:]) + ' '
+        bos = (len(stack) <= order + 2)
+        history = ' '.join(stack[-order - 2:]) + ' '
         idx, w = weighted_choice_king(
             10**lm.score(history + ctxvoc[k // 2], bos, k % 2) for k in range(len(ctxvoc) * 2))
         c = ctxvoc[idx // 2]
         # cprint(c)
         out.append(c)
+        stack.append(c)
         if idx % 2 or (len(out) > 3 and all(i == out[-1] for i in out[-3:])):
             # cprint('\n')
             break
@@ -111,8 +121,15 @@ ctx = pickle.load(open(sys.argv[3], 'rb'))
 for ln in sys.stdin:
     ln = ln.strip()
     if ln:
-        ctxvoc = list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(unpackvals, map(ctx.__getitem__, filter(None, map(indexword, frozenset(ln.split())))))))))) or voc
-        print(generate_word(LM, order, ctxvoc))
+        mode = ln[0]
+        words = ln[1:].split()
     else:
-        print(generate_word(LM, order, voc))
+        mode, words = '', []
+    ctxvoc = voc
+    cont = ()
+    if mode == 'r':
+        ctxvoc = list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(unpackvals, map(ctx.__getitem__, filter(None, map(indexword, frozenset(words)))))))))) or voc
+    elif mode == 'c':
+        cont = words
+    print(generate_word(LM, order, ctxvoc, cont))
     sys.stdout.flush()

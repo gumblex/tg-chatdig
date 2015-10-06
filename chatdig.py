@@ -1052,6 +1052,17 @@ def cmd_reply(expr, chatid, replyid, msg):
     text = (expr.strip() or text or ' '.join(t[0] for t in conn.execute("SELECT text FROM messages ORDER BY date DESC LIMIT 2").fetchall())).replace('\n', ' ')
     runapptask('reply', (text,), (chatid, replyid))
 
+def cmd_cont(expr, chatid, replyid, msg):
+    '''/cont [sentence] Complete the sentence.'''
+    if 'forward_from' in msg and msg['chat']['id'] < 0:
+        return
+    typing(chatid)
+    text = ''
+    if 'reply_to_message' in msg:
+        text = msg['reply_to_message'].get('text', '')
+    text = (expr.strip() or text or conn.execute("SELECT text FROM messages ORDER BY date DESC LIMIT 1").fetchone()[0]).replace('\n', ' ')
+    runapptask('cont', (text,), (chatid, replyid))
+
 def cmd_echo(expr, chatid, replyid, msg):
     '''/echo Parrot back.'''
     if 'ping' in expr.lower():
@@ -1231,6 +1242,7 @@ COMMANDS = collections.OrderedDict((
 ('cut', cmd_cut),
 ('say', cmd_say),
 ('reply', cmd_reply),
+('cont', cmd_cont),
 #('echo', cmd_echo),
 ('do', cmd_do),
 ('t2i', cmd_t2i),
@@ -1254,6 +1266,7 @@ PUBLIC = set((
 'cut',
 'say',
 'reply',
+'cont',
 #'echo',
 'do',
 '233',

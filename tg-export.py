@@ -219,6 +219,15 @@ def export_avatar(pid, ptype):
     else:
         res = json.loads(send_command('load_chat_photo ' + pname))
 
+CFG = {
+"tgdir": ".",
+"tgcmd": "bin/telegram-cli",
+"db": "telegram.db",
+"db": "telegram.db",
+
+}
+
+
 tgdir = '.'
 tgcmd = 'bin/telegram-cli'
 
