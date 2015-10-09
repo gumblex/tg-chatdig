@@ -9,6 +9,7 @@ import time
 import json
 import queue
 import signal
+import socket
 import random
 import logging
 import sqlite3
@@ -29,6 +30,8 @@ EXT_MEDIA_TYPES = frozenset(('audio', 'document', 'photo', 'sticker', 'video', '
 loglevel = logging.DEBUG if sys.argv[-1] == '-d' else logging.INFO
 
 logging.basicConfig(stream=sys.stdout, format='# %(asctime)s [%(levelname)s] %(message)s', level=loglevel)
+
+socket.setdefaulttimeout(60)
 
 HSession = requests.Session()
 USERAGENT = 'TgChatDiggerBot/%s %s' % (__version__, HSession.headers["User-Agent"])
@@ -399,7 +402,7 @@ def change_session():
 def bot_api(method, **params):
     for att in range(3):
         try:
-            req = HSession.get(URL + method, params=params, timeout=60)
+            req = HSession.get(URL + method, params=params, timeout=45)
             retjson = req.content
             ret = json.loads(retjson.decode('utf-8'))
             break
@@ -773,9 +776,15 @@ def logmsg(d, iorignore=False):
 def cmd_getmsg(expr, chatid, replyid, msg):
     '''/m <message_id> [...] Get specified message(s) by ID(s).'''
     try:
+        if not expr:
+            # raise for reply processing
+            raise ValueError
         mids = tuple(map(int, expr.split()))
     except Exception:
-        sendmsg('Syntax error. Usage: ' + cmd_getmsg.__doc__, chatid, replyid)
+        if 'reply_to_message' in msg:
+            sendmsg('Message ID: %d' % msg['reply_to_message']['message_id'], chatid, replyid)
+        else:
+            sendmsg('Syntax error. Usage: ' + cmd_getmsg.__doc__, chatid, replyid)
         return
     forwardmulti(mids, chatid, replyid)
 
