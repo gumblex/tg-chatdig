@@ -127,7 +127,7 @@ for ln in sys.stdin:
         mode, words = '', []
     ctxvoc = voc
     cont = ()
-    if mode == 'r':
+    if mode in 'rc':
         ctxvoc = list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(unpackvals, map(ctx.__getitem__, filter(None, map(indexword, frozenset(words)))))))))) or voc
     elif mode == 'c':
         cont = words
