@@ -226,9 +226,12 @@ def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
             m = db_getmsg(forward_message_id)
             if m:
                 text = "Fwd %s: %s" % (db_getufname(m[1])[:20], m[2])
-        text = text.strip()
-        if text.count('\n') < 1:
-            ircconn_say(CFG['ircchannel'], text)
+        lines = text.splitlines()
+        if len(lines) < 3:
+            text = ' '.join(lines)
+        else:
+            text = lines[0] + ' [...] ' + lines[-1]
+        ircconn_say(CFG['ircchannel'], text)
 
 @async_func
 def irc_forward(msg):
@@ -593,6 +596,8 @@ def command(text, chatid, replyid, msg):
                     expr = ' '.join(t[1:]).strip()
                     logging.info('Command: /%s %s' % (cmd, expr[:20]))
                     COMMANDS[cmd](expr, chatid, replyid, msg)
+                elif chatid < 0 and chatid != -CFG['groupid'] and cmd not in PUBLIC:
+                    sendmsg('This command is not available for this group. Send /help for available commands.', chatid, replyid)
             elif chatid > 0:
                 sendmsg('Invalid command. Send /help for help.', chatid, replyid)
         # 233333
@@ -1179,6 +1184,8 @@ def cmd__welcome(expr, chatid, replyid, msg):
     USER_CACHE[usr["id"]] = (usr.get("username"), usr.get("first_name"), usr.get("last_name"))
     sendmsg('欢迎 %s 加入本群！' % dc_getufname(usr), chatid, replyid)
 
+_facescore = lambda x: 1/2*math.erfc((0.5*100-x*100)/(math.sqrt(2)*(0.5*10)))*100
+
 def cmd_233(expr, chatid, replyid, msg):
     try:
         num = max(min(int(expr), 100), 1)
@@ -1191,7 +1198,10 @@ def cmd_233(expr, chatid, replyid, msg):
         txt += '\n' + ''.join(srandom.choice('🌝🌚') for i in range(rem))
     wcount = txt.count('🌝')
     if num > 9:
-        txt += '\n' + '(🌝%d/🌚%d)' % (wcount, num - wcount)
+        txt += '\n' + '(🌝%d/🌚%d' % (wcount, num - wcount)
+        if num > 41:
+            txt += ', 🌝%.2f%%' % _facescore(wcount / num)
+        txt += ')'
     sendmsg(txt, chatid, replyid)
 
 def cmd_fig(expr, chatid, replyid, msg):
