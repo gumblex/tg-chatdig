@@ -1184,7 +1184,10 @@ def cmd__welcome(expr, chatid, replyid, msg):
     USER_CACHE[usr["id"]] = (usr.get("username"), usr.get("first_name"), usr.get("last_name"))
     sendmsg('欢迎 %s 加入本群！' % dc_getufname(usr), chatid, replyid)
 
-_facescore = lambda x,y: 1/2*math.erfc((0.5*y-x)/(2**0.5*(0.5*y**0.5)))*100
+facescore = lambda x,y: 1/2*math.erfc((0.5*y-x)/(2**0.5*(0.5*y**0.5)))*100
+
+fstable = [facescore(i, 100) for i in range(101)]
+revface = lambda x: min((abs(x-v), k) for k,v in enumerate(fstable))[1]
 
 def cmd_233(expr, chatid, replyid, msg):
     try:
@@ -1200,7 +1203,7 @@ def cmd_233(expr, chatid, replyid, msg):
     if num > 9:
         txt += '\n' + '(🌝%d/🌚%d' % (wcount, num - wcount)
         if num > 41:
-            txt += ', 🌝%.2f%%' % _facescore(wcount, num)
+            txt += ', 🌝%.2f%%' % facescore(wcount, num)
         txt += ')'
     sendmsg(txt, chatid, replyid)
 
