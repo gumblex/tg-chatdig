@@ -458,7 +458,7 @@ class StatComposer:
             'end': strftime('%Y-%m-%d %H:%M:%S', self.end),
             'count': count,
             'freq': '%.2f' % (count * 60 / (self.end - self.start)),
-            'flooder': tuple(((k, db_getufname(k)), db_getuser(k)[0] or '', '%.2f%%' % (v/count*100)) for k, v in mcomm),
+            'flooder': tuple(((k, db_getufname(k)), db_getuser(k)[0] or '', '%.2f%%' % (v/count*100)) for k, v in mcomm if v > 2),
             'hours': hourdist,
             'types': types,
             'tags': tags,
