@@ -922,17 +922,18 @@ def cmd_uinfo(expr, chatid, replyid, msg):
     uinfoln.append(db_getufname(uid))
     uinfoln.append('ID: %s' % uid)
     result = [', '.join(uinfoln)]
-    r = conn.execute('SELECT src FROM messages WHERE date > ?', (time.time() - minutes * 60,)).fetchall()
-    timestr = timestring(minutes)
-    if r:
-        ctr = collections.Counter(i[0] for i in r)
-        if uid in ctr:
-            rank = sorted(ctr, key=ctr.__getitem__, reverse=True).index(uid) + 1
-            result.append('在最近%s内发了 %s 条消息，占 %.2f%%，位列第 %s。' % (timestr, ctr[uid], ctr[uid]/len(r)*100, rank))
+    if msg['chat']['id'] == -CFG['groupid']:
+        r = conn.execute('SELECT src FROM messages WHERE date > ?', (time.time() - minutes * 60,)).fetchall()
+        timestr = timestring(minutes)
+        if r:
+            ctr = collections.Counter(i[0] for i in r)
+            if uid in ctr:
+                rank = sorted(ctr, key=ctr.__getitem__, reverse=True).index(uid) + 1
+                result.append('在最近%s内发了 %s 条消息，占 %.2f%%，位列第 %s。' % (timestr, ctr[uid], ctr[uid]/len(r)*100, rank))
+            else:
+                result.append('在最近%s内没发消息。' % timestr)
         else:
             result.append('在最近%s内没发消息。' % timestr)
-    else:
-        result.append('在最近%s内没发消息。' % timestr)
     sendmsg('\n'.join(result), chatid, replyid)
 
 def cmd_stat(expr, chatid, replyid, msg):
@@ -1061,7 +1062,7 @@ def cmd_wyw(expr, chatid, replyid, msg):
 
 def cmd_say(expr, chatid, replyid, msg):
     '''/say Say something interesting.'''
-    typing(chatid)
+    #typing(chatid)
     if expr:
         runapptask('reply', (expr,), (chatid, replyid))
     else:
@@ -1276,7 +1277,7 @@ COMMANDS = collections.OrderedDict((
 ('cut', cmd_cut),
 ('say', cmd_say),
 ('reply', cmd_reply),
-('cont', cmd_cont),
+#('cont', cmd_cont),
 #('echo', cmd_echo),
 ('do', cmd_do),
 ('t2i', cmd_t2i),
@@ -1289,6 +1290,7 @@ COMMANDS = collections.OrderedDict((
 ))
 
 PUBLIC = set((
+'user',
 'py',
 'bf',
 'lisp',
@@ -1300,7 +1302,7 @@ PUBLIC = set((
 'cut',
 'say',
 'reply',
-'cont',
+#'cont',
 #'echo',
 'do',
 '233',
