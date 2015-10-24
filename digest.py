@@ -17,7 +17,6 @@ import jinja2
 import truecaser
 
 #import jieba
-#import jieba.analyse
 from vendor import mosesproxy as jieba
 from vendor import zhconv
 
@@ -339,19 +338,24 @@ class DigestComposer:
         return sorted(tags.items(), key=lambda x: (-len(x[1]), x[0]))
 
     def tc_preprocess(self):
-        prefix = [self.title]
+        titles = []
         for mid, value in self.msgs.items():
             media = json.loads(value[6] or '{}')
             if 'new_chat_title' in media:
-                text = media['new_chat_title']
-                for k in range(len(prefix), -1, -1):
-                    pf = ''.join(prefix[:k])
-                    if text.startswith(pf):
-                        text = text[len(pf):]
-                        prefix = prefix[:k]
-                        prefix.append(text)
-                        break
-                yield (mid, prefix)
+                titles.append((mid, media['new_chat_title']))
+        if titles:
+            prefix = [os.path.commonprefix([text for mid, text in titles])]
+        else:
+            prefix = [self.title]
+        for mid, text in titles:
+            for k in range(len(prefix), -1, -1):
+                pf = ''.join(prefix[:k])
+                if text.startswith(pf):
+                    text = text[len(pf):]
+                    prefix = prefix[:k]
+                    prefix.append(text)
+                    break
+            yield (mid, prefix)
 
     def titlechange(self):
         last = []
