@@ -453,9 +453,11 @@ def forward(message_id, chat_id, reply_to_message_id=None):
     global LOG_Q
     logging.info('forwardMessage: %r' % message_id)
     try:
+        if message_id < 0:
+            raise ValueError('Invalid message id')
         r = bot_api('forwardMessage', chat_id=chat_id, from_chat_id=-CFG['groupid'], message_id=message_id)
         logging.debug('Forwarded: %s' % message_id)
-    except BotAPIFailed as ex:
+    except (ValueError, BotAPIFailed) as ex:
         m = db_getmsg(message_id)
         if m:
             r = sendmsg('[%s] %s: %s' % (time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(m[4] + CFG['timezone'] * 3600)), db_getufname(m[1]), m[2]), chat_id, reply_to_message_id)
@@ -471,9 +473,11 @@ def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
     for message_id in message_ids:
         logging.info('forwardMessage: %r' % message_id)
         try:
+            if message_id < 0:
+                raise ValueError('Invalid message id')
             r = bot_api('forwardMessage', chat_id=chat_id, from_chat_id=-CFG['groupid'], message_id=message_id)
             logging.debug('Forwarded: %s' % message_id)
-        except BotAPIFailed as ex:
+        except (ValueError, BotAPIFailed) as ex:
             failed = True
             break
     if failed:
@@ -882,6 +886,26 @@ def cmd_search(expr, chatid, replyid, msg):
             result.append('[%d|%s] %s: %s' % (mid, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(date + CFG['timezone'] * 3600)), db_getufname(fr), text))
     sendmsg('\n'.join(result) or 'Found nothing.', chatid, replyid)
 
+def cmd_mention(expr, chatid, replyid, msg):
+    '''/mention Show last mention of you.'''
+    tinput = ''
+    uid = msg['from']['id']
+    user = db_getuser(uid)
+    if user[0]:
+        res = conn.execute("SELECT * FROM messages WHERE text LIKE ? OR reply_id IN (SELECT id FROM messages WHERE src = ?) ORDER BY date DESC LIMIT 1", ('%@' + user[0] + '%', uid)).fetchone()
+        userat = '@' + user[0] + ' '
+    else:
+        res = conn.execute("SELECT * FROM messages WHERE reply_id IN (SELECT id FROM messages WHERE src = ?) ORDER BY date DESC LIMIT 1", (uid,)).fetchone()
+        userat = ''
+    if res:
+        reid = res[0]
+        if reid > 0:
+            sendmsg(userat + 'You were mentioned in this message.', chatid, reid)
+        else:
+            forward(reid, chatid, replyid)
+    else:
+        sendmsg('No mention found.', chatid, replyid)
+
 def timestring(minutes):
     h, m = divmod(minutes, 60)
     d, h = divmod(h, 24)
@@ -1259,6 +1283,7 @@ COMMANDS = collections.OrderedDict((
 ('context', cmd_context),
 ('s', cmd_search),
 ('search', cmd_search),
+('mention', cmd_mention),
 ('user', cmd_uinfo),
 ('uinfo', cmd_uinfo),
 ('digest', cmd_digest),
