@@ -888,14 +888,17 @@ def cmd_search(expr, chatid, replyid, msg):
 
 def cmd_mention(expr, chatid, replyid, msg):
     '''/mention Show last mention of you.'''
+    if msg['chat']['id'] != -CFG['groupid']:
+        sendmsg("This command can't be used in this chat.", chatid, replyid)
+        return
     tinput = ''
     uid = msg['from']['id']
     user = db_getuser(uid)
     if user[0]:
-        res = conn.execute("SELECT * FROM messages WHERE text LIKE ? OR reply_id IN (SELECT id FROM messages WHERE src = ?) ORDER BY date DESC LIMIT 1", ('%@' + user[0] + '%', uid)).fetchone()
+        res = conn.execute("SELECT * FROM messages WHERE (text LIKE ? OR reply_id IN (SELECT id FROM messages WHERE src = ?)) AND src != ? ORDER BY date DESC LIMIT 1", ('%@' + user[0] + '%', uid, CFG['botid'])).fetchone()
         userat = '@' + user[0] + ' '
     else:
-        res = conn.execute("SELECT * FROM messages WHERE reply_id IN (SELECT id FROM messages WHERE src = ?) ORDER BY date DESC LIMIT 1", (uid,)).fetchone()
+        res = conn.execute("SELECT * FROM messages WHERE reply_id IN (SELECT id FROM messages WHERE src = ?) AND src != ? ORDER BY date DESC LIMIT 1", (uid, CFG['botid'])).fetchone()
         userat = ''
     if res:
         reid = res[0]
