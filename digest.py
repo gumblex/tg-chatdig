@@ -14,11 +14,11 @@ import itertools
 import collections
 
 import jinja2
-import truecaser
 
 #import jieba
-from vendor import mosesproxy as jieba
+from util import truecaser
 from vendor import zhconv
+from vendor import mosesproxy as jieba
 
 NAME = '##Orz'
 TITLE = '##Orz 分部喵'

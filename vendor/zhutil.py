@@ -66,10 +66,12 @@ RE_FW = re.compile(
 RE_UCJK = re.compile(
     '([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0002A6D6]+)')
 
+# Detokenization function for Chinese.
 detokenize = lambda s: RE_WS_IN_FW.sub(r'\1', s).strip()
 
 
 def splitsentence(sentence):
+    '''Split a piece of Chinese into sentences.'''
     # s = ''.join((chr(ord(ch)+0xFEE0) if ch in halfwidth else ch) for ch in sentence)
     s = sentence
     slist = []
@@ -82,6 +84,7 @@ def splitsentence(sentence):
 
 
 def splithard(sentence, maxchar=None):
+    '''Forcely split a piece of Chinese into sentences with the limit of max sentence length.'''
     slist = splitsentence(sentence)
     if maxchar is None:
         return slist
@@ -108,6 +111,7 @@ def splithard(sentence, maxchar=None):
 
 
 def fixmissing(slist):
+    '''Fix missing quotes.'''
     newlist = []
     for i in slist:
         newlist.extend(filter(None, refixmissing.split(i)))
@@ -115,6 +119,7 @@ def fixmissing(slist):
 
 
 def filterlist(slist):
+    '''Get meaningful sentences.'''
     for i in slist:
         s = i.lstrip(tailpunct).rstrip(headpunct)
         if len(s) > 1:
@@ -122,6 +127,7 @@ def filterlist(slist):
 
 
 def addwalls(tokiter):
+    '''Add walls between punctuations for Moses.'''
     lastwall = False
     for tok in tokiter:
         if tok in punct:
@@ -136,6 +142,7 @@ def addwalls(tokiter):
 
 
 def addwallzone(tokiter):
+    '''Add walls and zones between punctuations for Moses.'''
     W = '<wall />'
     out = []
     expect = zidx = None
@@ -165,6 +172,7 @@ def addwallzone(tokiter):
 
 
 def calctxtstat(s):
+    '''Detect whether a string is modern or classical Chinese.'''
     global zhcmodel, zhmmodel
     if zhcmodel is None:
         import json
