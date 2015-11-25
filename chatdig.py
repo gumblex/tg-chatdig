@@ -798,14 +798,13 @@ def cmd_getmsg(expr, chatid, replyid, msg):
     '''/m <message_id> [...] Get specified message(s) by ID(s).'''
     try:
         if not expr:
-            # raise for reply processing
-            raise ValueError
+            if 'reply_to_message' in msg:
+                sendmsg('Message ID: %d' % msg['reply_to_message']['message_id'], chatid, replyid)
+            else:
+                raise ValueError
         mids = tuple(map(int, expr.split()))
     except Exception:
-        if 'reply_to_message' in msg:
-            sendmsg('Message ID: %d' % msg['reply_to_message']['message_id'], chatid, replyid)
-        else:
-            sendmsg('Syntax error. Usage: ' + cmd_getmsg.__doc__, chatid, replyid)
+        sendmsg('Syntax error. Usage: ' + cmd_getmsg.__doc__, chatid, replyid)
         return
     forwardmulti(mids, chatid, replyid)
 
