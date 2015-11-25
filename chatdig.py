@@ -1157,8 +1157,11 @@ def cmd_do(expr, chatid, replyid, msg):
         except KeyError:
             pass
         if len(expr) == 1:
-            res = unicodedata.name(expr)
-            sendmsg(res, chatid, replyid)
+            try:
+                res = unicodedata.name(expr)
+                sendmsg(res, chatid, replyid)
+            except ValueError:
+                sendmsg('Character not in Unicode %s' % unicodedata.unidata_version, chatid, replyid)
         else:
             sendmsg('Something happened.', chatid, replyid)
 
