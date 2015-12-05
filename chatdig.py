@@ -1366,7 +1366,7 @@ APP_TASK = {}
 APP_LCK = threading.Lock()
 APP_CMD = ('python3', 'appserve.py')
 APP_P = subprocess.Popen(APP_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-executor = concurrent.futures.ThreadPoolExecutor(3)
+executor = concurrent.futures.ThreadPoolExecutor(10)
 
 pollthr = threading.Thread(target=getupdates)
 pollthr.daemon = True
