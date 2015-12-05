@@ -10,6 +10,7 @@ import threading
 import traceback
 import subprocess
 import collections
+import concurrent.futures
 
 from vendor import zhutil
 from vendor import zhconv
@@ -25,9 +26,7 @@ def docommands():
     global MSG_Q
     while 1:
         obj = MSG_Q.get()
-        thr = threading.Thread(target=async_command, args=(obj,))
-        thr.daemon = True
-        thr.start()
+        executor.submit(async_command, obj)
 
 def async_command(obj):
     sys.stdout.buffer.write(json.dumps(process(obj)).encode('utf-8') + b'\n')
@@ -205,6 +204,7 @@ EVIL_CMD = ('python', 'seccomp.py')
 BF_CMD = ('vendor/brainfuck',)
 LISP_CMD = ('python', 'lispy.py')
 
+executor = concurrent.futures.ThreadPoolExecutor(5)
 cmdthr = threading.Thread(target=docommands)
 cmdthr.daemon = True
 cmdthr.start()
