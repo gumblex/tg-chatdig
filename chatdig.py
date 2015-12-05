@@ -18,6 +18,7 @@ import functools
 import subprocess
 import collections
 import unicodedata
+import concurrent.futures
 
 import requests
 from vendor import libirc
@@ -96,9 +97,7 @@ def async_func(func):
                 func(*args, **kwargs)
             except Exception:
                 logging.exception('Async function failed.')
-        thr = threading.Thread(target=func_noerr, args=args, kwargs=kwargs)
-        thr.daemon = True
-        thr.start()
+        executor.submit(func_noerr, *args, **kwargs)
     return wrapped
 
 def _raise_ex(ex):
@@ -1367,6 +1366,7 @@ APP_TASK = {}
 APP_LCK = threading.Lock()
 APP_CMD = ('python3', 'appserve.py')
 APP_P = subprocess.Popen(APP_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+executor = concurrent.futures.ThreadPoolExecutor(3)
 
 pollthr = threading.Thread(target=getupdates)
 pollthr.daemon = True
