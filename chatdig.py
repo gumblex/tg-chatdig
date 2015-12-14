@@ -781,7 +781,10 @@ def smartname(user, db=False, limit=20):
     if last:
         pn += ' ' + last
     if len(pn) > limit:
-        return first[:limit]
+        if len(first) > limit:
+            return first.split(None, 1)[0][:limit]
+        else:
+            return first[:limit]
     else:
         return pn
 
