@@ -3,7 +3,10 @@
 
 import time
 import logging
+import threading
 import functools
+
+import urllib.request
 
 __version__ = '2.0'
 
@@ -78,6 +81,8 @@ class DummyProtocal(MessageProtocal):
     name = 'dummy'
 
     def run(self):
-        while 1:
-            self.host.newmsg(Message(protocal=self.name, text='Test.'))
-            time.sleep(2)
+        while not self.host.stop.is_set():
+            #self.host.newmsg(Message(protocal=self.name, text='Test.'))
+            print(self.host.newmsg(Message(protocal=self.name, text='/233')))
+            t = urllib.request.urlopen('http://127.0.0.1:7657/').read().decode()
+            print(self.host.newmsg(Message(protocal=self.name, text=t)))

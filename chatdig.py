@@ -15,32 +15,34 @@ import provider
 
 __version__ = '2.0'
 
+signames = {k: v for v, k in reversed(sorted(signal.__dict__.items()))
+     if v.startswith('SIG') and not v.startswith('SIG_')}
+
 class MsgServer():
     def __init__(self, protocals, loggers):
         self.protocals = protocals
         self.loggers = loggers
-        self.threads = []
         self.cmdh = provider.CommandHandler(self)
-        self.executor = concurrent.futures.ThreadPoolExecutor(10)
+        self.executor = concurrent.futures.ThreadPoolExecutor(20)
+        self.protocal_futures = []
+        self.stop = threading.Event()
 
-    def newmsg(self, msg):
+    def newmsg(self, msg, cmd=True):
         fs = [self.executor.submit(h.onmsg, msg) for h in self.loggers]
-        fs.append(self.executor.submit(self.cmdh.onmsg, msg))
         for f in fs:
-            try:
-                f.result(timeout=10)
-            except Exception:
-                logging.exception('Error processing msg: %s' % msg)
+            f.result(timeout=10)
+        if cmd:
+            return self.executor.submit(self.cmdh.onmsg, msg).result(timeout=10)
 
     def logmsg(self, msg):
         logging.info(msg)
 
     def signal(self, signum, frame):
         if signum in (signal.SIGINT, signal.SIGTERM):
-            logging.info('Got signal %s: exiting...' % signum)
+            logging.info('Got signal %s: exiting...' % signames[signum])
             self.teardown()
         elif signum == signal.SIGUSR1:
-            logging.info('Got signal %s: committing db...' % signum)
+            logging.info('Got signal %s: committing db...' % signames[signum])
 
     def setup(self):
         self.p = {}
@@ -50,15 +52,14 @@ class MsgServer():
         for p in self.protocals:
             self.p[p.name] = p
             p.setup(self)
-            thr = threading.Thread(target=p.run)
-            thr.daemon = True
-            thr.start()
-            self.threads.append(thr)
+            self.protocal_futures.append(self.executor.submit(p.run))
 
     def teardown(self):
+        self.stop.set()
         [p.teardown() for p in self.protocals]
         [p.teardown() for p in self.loggers]
-        self.executor.shutdown()
+        self.executor.shutdown(False)
+        [p.result(1) for p in self.protocal_futures]
 
     def __getattr__(self, name):
         try:
@@ -86,8 +87,4 @@ signal.signal(signal.SIGINT, MSrv.signal)
 signal.signal(signal.SIGTERM, MSrv.signal)
 signal.signal(signal.SIGUSR1, MSrv.signal)
 logging.info("Satellite launched. Pid: %s" % os.getpid())
-try:
-    for thr in MSrv.threads:
-        thr.join()
-finally:
-    MSrv.teardown()
+MSrv.stop.wait()
