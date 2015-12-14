@@ -1213,6 +1213,9 @@ def cmd_autoclose(expr, chatid, replyid, msg):
             CFG['autoclose'] = True
             sendmsg('Auto closing brackets enabled.', chatid, replyid)
 
+def cmd_cancel(expr, chatid, replyid, msg):
+    bot_api('sendMessage', chat_id=chatid, text='Cancelled.', reply_to_message_id=replyid, reply_markup='{"hide_keyboard": true}')
+
 def cmd__cmd(expr, chatid, replyid, msg):
     global SAY_P, APP_P
     if chatid < 0:
@@ -1334,6 +1337,7 @@ COMMANDS = collections.OrderedDict((
 ('233', cmd_233),
 ('start', cmd_start),
 ('help', cmd_help),
+('cancel', cmd_cancel),
 ('_cmd', cmd__cmd)
 ))
 
@@ -1355,6 +1359,7 @@ PUBLIC = set((
 'do',
 '233',
 'start',
+'cancel',
 'help'
 ))
 
