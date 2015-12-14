@@ -4,14 +4,8 @@ import os
 import sys
 import json
 import socket
-from subprocess import Popen
 
-_curpath = os.path.normpath(
-    os.path.join(os.getcwd(), os.path.dirname(__file__)))
-startserver_path = os.path.join(_curpath, 'startserver')
-
-filename = '/home/gumble/server/pyapp/data/mosesserver.sock'
-RESTART = True
+address = ('172.20.1.3', 13332)
 
 dumpsjson = lambda x: json.dumps(x).encode('utf-8')
 loadsjson = lambda x: json.loads(x.decode('utf-8'))
@@ -30,24 +24,13 @@ def sendall(sock, data):
 
 
 def receive(data, autorestart=None):
-    global filename, RESTART
-    autorestart = RESTART if autorestart is None else autorestart
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        sock.connect(filename)
+        sock.connect(address)
         sendall(sock, data)
-    except (FileNotFoundError, ConnectionRefusedError, BrokenPipeError) as ex:
-        if autorestart:
-            Popen(('/bin/bash', startserver_path)).wait()
-            sock.connect(filename)
-            sendall(sock, data)
-        else:
-            raise ex
+    except (ConnectionRefusedError, BrokenPipeError) as ex:
+        raise ex
     received = recvall(sock)
-    if not received and autorestart:
-        Popen(('/bin/bash', startserver_path)).wait()
-        sendall(sock, data)
-        received = recvall(sock)
     sock.close()
     return received
 
