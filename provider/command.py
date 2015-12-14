@@ -517,8 +517,10 @@ class CommandHandler:
 
 
 
-
-
+    def cmd_cancel(self, msg, expr):
+        if msg['protocal'] != 'tgbot':
+            return NotImplemented
+        bot_api('sendMessage', chat_id=msg['chat']['id'], text='Cancelled.', reply_to_message_id=msg['message_id'], reply_markup='{"hide_keyboard": true}')
 
     def cmd_hello(self, msg, expr):
         return 'Hello!'
@@ -545,22 +547,20 @@ class CommandHandler:
         return txt
 
     def cmd_help(self, msg, expr):
-        if msg['protocal'] == 'tgbot':
-            if expr:
-                if expr in self.cmds:
-                    h = self.cmds[expr].__doc__
-                    if h:
-                        return h
-                    else:
-                        return 'Help is not available for ' + expr
-                else:
-                    return 'Command not found.'
-            elif chatid == -self.host.tgbot.cfg['groupid']:
-                return 'Full help disabled in this group.'
-            elif chatid > 0:
-                return '\n'.join(uniq(cmd.__doc__ for cmdname, cmd in self.cmds.items() if cmd.__doc__ and self.check_protocal(cmdname, 'tgbot')))
-            else:
-                return '\n'.join(uniq(cmd.__doc__ for cmdname, cmd in self.cmds.items() if cmd.__doc__ and self.check_protocal(cmdname, 'tgbot') and not self.cmdinfo(cmdname).get('tgpriv')))
-        else:
+        if msg['protocal'] != 'tgbot':
             return NotImplemented
-
+        if expr:
+            if expr in self.cmds:
+                h = self.cmds[expr].__doc__
+                if h:
+                    return h
+                else:
+                    return 'Help is not available for ' + expr
+            else:
+                return 'Command not found.'
+        elif chatid == -self.host.tgbot.cfg['groupid']:
+            return 'Full help disabled in this group.'
+        elif chatid > 0:
+            return '\n'.join(uniq(cmd.__doc__ for cmdname, cmd in self.cmds.items() if cmd.__doc__ and self.check_protocal(cmdname, 'tgbot')))
+        else:
+            return '\n'.join(uniq(cmd.__doc__ for cmdname, cmd in self.cmds.items() if cmd.__doc__ and self.check_protocal(cmdname, 'tgbot') and not self.cmdinfo(cmdname).get('tgpriv')))
