@@ -214,7 +214,7 @@ def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
             if '_ircuser' in m:
                 text = "%s: %s" % (m['_ircuser'], text)
             elif 'from' in m:
-                src = dc_getufname(m['from'])[:20]
+                src = smartname(m['from'])
                 if m['from']['id'] in (CFG['botid'], CFG['ircbotid']):
                     rnmatch = re_ircforward.match(m.get('text', ''))
                     if rnmatch:
@@ -224,7 +224,7 @@ def irc_send(text='', reply_to_message_id=None, forward_message_id=None):
             # not async, so no sqlite3.ProgrammingError in db_*
             m = db_getmsg(forward_message_id)
             if m:
-                text = "Fwd %s: %s" % (db_getufname(m[1])[:20], m[2])
+                text = "Fwd %s: %s" % (smartname(m[1], True), m[2])
         lines = text.splitlines()
         if len(lines) < 3:
             text = ' '.join(lines)
@@ -255,7 +255,7 @@ def irc_forward(msg):
                     if rnmatch:
                         fwdname = rnmatch.group(1) or rnmatch.group(3)
                         text = rnmatch.group(2) or rnmatch.group(4)
-                fwdname = fwdname or dc_getufname(msg['forward_from'])[:20]
+                fwdname = fwdname or smartname(msg['forward_from'])
                 text = "Fwd %s: %s" % (fwdname, text)
             elif 'reply_to_message' in msg:
                 replname = ''
@@ -264,7 +264,7 @@ def irc_forward(msg):
                     rnmatch = re_ircforward.match(msg['reply_to_message'].get('text', ''))
                     if rnmatch:
                         replname = rnmatch.group(1) or rnmatch.group(3)
-                replname = replname or dc_getufname(replyu)[:20]
+                replname = replname or smartname(replyu)
                 text = "%s: %s" % (replname, text)
             # ignore blank lines
             text = list(filter(lambda s: s.strip(), text.splitlines()))
@@ -272,7 +272,7 @@ def irc_forward(msg):
                 text = text[:3]
                 text[-1] += ' [...]'
             for ln in text[:3]:
-                ircconn_say(CFG['ircchannel'], '[%s] %s' % (dc_getufname(msg['from'])[:20], ln))
+                ircconn_say(CFG['ircchannel'], '[%s] %s' % (smartname(msg['from']), ln))
     except Exception:
         logging.exception('Forward a message to IRC failed.')
 
@@ -768,6 +768,22 @@ def dc_getufname(user, maxlen=100):
     if len(name) > maxlen:
         name = name[:maxlen] + '…'
     return name
+
+def smartname(user, db=False, limit=20):
+    if db:
+        first, last = db_getuser(user)[1:]
+    else:
+        USER_CACHE[user['id']] = (user.get('username'), user.get('first_name'), user.get('last_name'))
+        first, last = user.get('first_name', ''), user.get('last_name', '')
+    if not first:
+        return '<%s>' % 'Unknown'[:limit-2]
+    pn = first
+    if last:
+        pn += ' ' + last
+    if len(pn) > limit:
+        return first[:limit]
+    else:
+        return pn
 
 @functools.lru_cache(maxsize=10)
 def db_getmsg(mid):
