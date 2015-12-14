@@ -363,7 +363,6 @@ def importupdates(offset, number=5000):
         logging.info('Imported %s - %s' % (off, updates[-1]["update_id"]))
         off = updates[-1]["update_id"] + 1
         for d in updates:
-            uid = d['update_id']
             if 'message' in d:
                 msg = d['message']
                 cls = classify(msg)
@@ -476,6 +475,8 @@ def forwardmulti(message_ids, chat_id, reply_to_message_id=None):
                 raise ValueError('Invalid message id')
             r = bot_api('forwardMessage', chat_id=chat_id, from_chat_id=-CFG['groupid'], message_id=message_id)
             logging.debug('Forwarded: %s' % message_id)
+            if chat_id == -CFG['groupid']:
+                LOG_Q.put(r)
         except (ValueError, BotAPIFailed) as ex:
             failed = True
             break
@@ -616,7 +617,6 @@ def command(text, chatid, replyid, msg):
 def processmsg():
     d = MSG_Q.get()
     logging.debug('Msg arrived: %r' % d)
-    uid = d['update_id']
     if 'message' in d:
         msg = d['message']
         if 'text' in msg:
@@ -908,7 +908,6 @@ def cmd_mention(expr, chatid, replyid, msg):
     if msg['chat']['id'] != -CFG['groupid']:
         sendmsg("This command can't be used in this chat.", chatid, replyid)
         return
-    tinput = ''
     uid = msg['from']['id']
     user = db_getuser(uid)
     if user[0]:
@@ -933,7 +932,6 @@ def timestring(minutes):
 
 def cmd_uinfo(expr, chatid, replyid, msg):
     '''/user|/uinfo [@username] [minutes=1440] Show information about <@username>.'''
-    tinput = ''
     if 'reply_to_message' in msg:
         uid = msg['reply_to_message']['from']['id']
     else:

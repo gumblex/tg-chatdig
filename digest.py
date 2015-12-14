@@ -361,7 +361,6 @@ class DigestComposer:
         last = []
         for mid, prefix in self.tc_preprocess():
             comm = os.path.commonprefix((last, prefix))
-            delta = len(prefix) - len(comm) - 1
             if len(prefix) == len(last) == len(comm) + 1:
                 yield '<li>'
                 msg = self.msgs[mid]
