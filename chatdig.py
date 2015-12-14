@@ -664,6 +664,7 @@ def cachemedia(msg):
     mt = msg.keys() & frozenset(('audio', 'document', 'sticker', 'video', 'voice'))
     file_ext = ''
     if mt:
+        mt = mt.pop()
         file_id = msg[mt]['file_id']
         file_size = msg[mt].get('file_size')
         if mt == 'sticker':
@@ -710,12 +711,25 @@ def servemedia(msg):
             elif servemode == 'vim-cn':
                 r = requests.post('http://img.vim-cn.com/', files={'name': open(os.path.join(CFG['cachepath'], fname), 'rb')})
                 ret += ' ' + r.text
+    elif 'sticker' in msg:
+        if CFG.get('servemedia') == 'self':
+            fname, code = cachemedia(msg)
+            ret += ' %s%s' % (CFG['serveurl'], fname)
     elif 'document' in msg:
-        ret += ' %s type: %s' % (msg['document'].get('file_name', ''), msg['document'].get('mime_type', ''))
+        ret += ' %s' % (msg['document'].get('file_name', ''))
+        if CFG.get('servemedia') == 'self' and msg['document'].get('file_size', 0) <= CFG.get('servemaxsize', 1048576):
+            fname, code = cachemedia(msg)
+            ret += ' %s%s' % (CFG['serveurl'], fname)
     elif 'video' in msg:
         ret += ' ' + timestring_a(msg['video'].get('duration', 0))
+        if CFG.get('servemedia') == 'self' and msg['document'].get('file_size', 0) <= CFG.get('servemaxsize', 1048576):
+            fname, code = cachemedia(msg)
+            ret += ' %s%s' % (CFG['serveurl'], fname)
     elif 'voice' in msg:
         ret += ' ' + timestring_a(msg['voice'].get('duration', 0))
+        if CFG.get('servemedia') == 'self' and msg['document'].get('file_size', 0) <= CFG.get('servemaxsize', 1048576):
+            fname, code = cachemedia(msg)
+            ret += ' %s%s' % (CFG['serveurl'], fname)
     elif 'new_chat_title' in msg:
         ret += ' ' + msg['new_chat_title']
     return ret
