@@ -722,12 +722,12 @@ def servemedia(msg):
             ret += ' %s%s' % (CFG['serveurl'], fname)
     elif 'video' in msg:
         ret += ' ' + timestring_a(msg['video'].get('duration', 0))
-        if CFG.get('servemedia') == 'self' and msg['document'].get('file_size', 0) <= CFG.get('servemaxsize', 1048576):
+        if CFG.get('servemedia') == 'self' and msg['video'].get('file_size', 0) <= CFG.get('servemaxsize', 1048576):
             fname, code = cachemedia(msg)
             ret += ' %s%s' % (CFG['serveurl'], fname)
     elif 'voice' in msg:
         ret += ' ' + timestring_a(msg['voice'].get('duration', 0))
-        if CFG.get('servemedia') == 'self' and msg['document'].get('file_size', 0) <= CFG.get('servemaxsize', 1048576):
+        if CFG.get('servemedia') == 'self' and msg['voice'].get('file_size', 0) <= CFG.get('servemaxsize', 1048576):
             fname, code = cachemedia(msg)
             ret += ' %s%s' % (CFG['serveurl'], fname)
     elif 'new_chat_title' in msg:
