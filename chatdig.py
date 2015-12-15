@@ -1016,7 +1016,6 @@ def cmd_digest(expr, chatid, replyid, msg):
 
 def cmd_calc(expr, chatid, replyid, msg):
     '''/calc <expr> Calculate <expr>.'''
-    # Too many bugs
     if expr:
         runapptask('calc', (expr,), (chatid, replyid))
     else:
@@ -1226,6 +1225,7 @@ def cmd_autoclose(expr, chatid, replyid, msg):
             sendmsg('Auto closing brackets enabled.', chatid, replyid)
 
 def cmd_cancel(expr, chatid, replyid, msg):
+    '''/cancel Hide keyboard and interrupt current session.'''
     bot_api('sendMessage', chat_id=chatid, text='Cancelled.', reply_to_message_id=replyid, reply_markup='{"hide_keyboard": true}')
 
 def cmd__cmd(expr, chatid, replyid, msg):
@@ -1326,7 +1326,7 @@ COMMANDS = collections.OrderedDict((
 ('uinfo', cmd_uinfo),
 ('digest', cmd_digest),
 ('stat', cmd_stat),
-#('calc', cmd_calc),
+('calc', cmd_calc),
 #('calc', cmd_py),
 ('py', cmd_py),
 ('bf', cmd_bf),
@@ -1355,6 +1355,7 @@ COMMANDS = collections.OrderedDict((
 
 PUBLIC = set((
 'user',
+'calc',
 'py',
 'bf',
 'lisp',

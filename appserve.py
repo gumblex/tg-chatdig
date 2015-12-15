@@ -15,10 +15,10 @@ import concurrent.futures
 from vendor import zhutil
 from vendor import zhconv
 from vendor import figchar
+from vendor import simpcalc
 from vendor import simpleime
 from vendor import mosesproxy
 from vendor import chinesename
-#from vendor import fparser
 
 # {"id": 1, "cmd": "bf", "args": [",[.,]", "asdasdf"]}
 
@@ -63,14 +63,10 @@ def process(obj):
 
 def cmd_calc(expr):
     '''/calc <expr> Calculate <expr>.'''
-    # Too many bugs
-    r = fx233es.Evaluate(expr)
-    res = None
-    if r is not None or fx233es.rformat:
-        res = fx233es.PrintResult()
-        if len(res) > 200:
-            res = res[:200] + '...'
-    return res or 'Nothing'
+    r = calculator.pretty(expr)
+    if len(r) > 200:
+        r = r[:200] + '...'
+    return r or 'Nothing'
 
 def cmd_py(expr):
     proc = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd='vendor')
@@ -213,7 +209,7 @@ saythr = threading.Thread(target=getsaying)
 saythr.daemon = True
 saythr.start()
 
-# fx233es = fparser.Parser(numtype='decimal')
+calculator = simpcalc.Calculator()
 namemodel = chinesename.NameModel('vendor/namemodel.m')
 simpleime.loaddict('vendor/pyindex.dawg', 'vendor/essay.dawg')
 fcgen = figchar.BlockGenerator('vendor/wqy.pkl', '🌝🌚')
