@@ -6,6 +6,7 @@ import math
 import cmath
 import random
 import operator
+import collections
 
 
 class CalculatorError(Exception):
@@ -117,24 +118,25 @@ class Calculator:
     # type: 0:Whitespace, 1:Function, 2:Operator-ltr, 3:Operator-rtl
     # 4:Delimiter, 5:BracketEnd
 
-    operators = {
-        " ": ('ws', 1, 1),
-        "\t": ('ws', 1, 1),
-        "(": ('(', 1, 1),
-        ",": (',', 1, 2),
-        "!": ('op_l', 2, 1),
-        "^": ('op_r', 3, 2),
+    operators = collections.OrderedDict((
+        (" ", ('ws', 1, 1)),
+        ("\t", ('ws', 1, 1)),
+        ("(", ('(', 1, 1)),
+        (",", (',', 1, 2)),
+        ("!", ('op_l', 2, 1)),
+        ("^", ('op_r', 3, 2)),
+        ("**", ('op_r', 3, 2)),
         # recognize on parsing
-        # "pos": ('op_r', 4, 1),
-        # "neg": ('op_r', 4, 1),
-        "*": ('op_l', 5, 2),
-        "/": ('op_l', 5, 2),
-        "\\": ('op_l', 5, 2),
-        "%": ('op_l', 5, 2),
-        "+": ('op_l', 6, 2),
-        "-": ('op_l', 6, 2),
-        ")": (')', 7, 1)
-    }
+        # ("pos", ('op_r', 4, 1)),
+        # ("neg", ('op_r', 4, 1)),
+        ("*", ('op_l', 5, 2)),
+        ("/", ('op_l', 5, 2)),
+        ("\\", ('op_l', 5, 2)),
+        ("%", ('op_l', 5, 2)),
+        ("+", ('op_l', 6, 2)),
+        ("-", ('op_l', 6, 2)),
+        (")", (')', 7, 1))
+    ))
 
     const = {
         "i": 1j,
@@ -146,6 +148,7 @@ class Calculator:
     functions = {
         "!": (math.factorial, 1),
         "^": (operator.pow, 2),
+        "**": (operator.pow, 2),
         "*": (operator.mul, 2),
         "/": (operator.truediv, 2),
         "\\": (operator.floordiv, 2),
@@ -218,6 +221,7 @@ class Calculator:
 
     def __init__(self):
         self.vars = {self.ansvar: 0}
+        self.autoclose = False
 
     def splitexpr(self, expr):
         pos = 0
@@ -248,7 +252,7 @@ class Calculator:
                 raise SyntaxError(pos)
             pos += len(s)
 
-    def torpn(self, lstin, autoclose=False):
+    def torpn(self, lstin):
         opstack = []
         lastt = None
         for key, token in enumerate(lstin):
@@ -304,7 +308,7 @@ class Calculator:
             op = opstack.pop()
             if op.type != '(':
                 yield op
-            elif not autoclose:
+            elif not self.autoclose:
                 raise SyntaxError(op.pos)
 
     def evalrpn(self, lstin):
@@ -341,15 +345,18 @@ class Calculator:
         self.vars[self.ansvar] = ret
         return ret
 
-    def pretty(self, expr):
+    def pretty(self, expr, err=True):
         try:
             ret = self.eval(expr)
         except MathError as ex:
-            return "Math Error:\n %s\n %s" % (expr, ' ' * ex.pos + '^')
+            if err:
+                return "Math Error:\n %s\n %s" % (expr, ' ' * ex.pos + '^')
         except SyntaxError as ex:
-            return "Syntax Error:\n %s\n %s" % (expr, ' ' * ex.pos + '^')
+            if err:
+                return "Syntax Error:\n %s\n %s" % (expr, ' ' * ex.pos + '^')
         except KbdBreak as ex:
-            return "Keyboard Break:\n %s\n %s" % (expr, ' ' * ex.pos + '^')
+            if err:
+                return "Keyboard Break:\n %s\n %s" % (expr, ' ' * ex.pos + '^')
         if ret is None:
             return ''
         elif isinstance(ret, complex):
