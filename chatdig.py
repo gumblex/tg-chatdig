@@ -823,6 +823,7 @@ def logmsg(d, iorignore=False):
     conn.execute(into + ' messages (id, src, text, media, date, fwd_src, fwd_date, reply_id) VALUES (?,?,?,?, ?,?,?,?)',
                  (d['message_id'], src, text, json.dumps(media) if media else None, d['date'], fwd_src, d.get('forward_date'), reply_id))
     logging.info('Logged %s: %s', d['message_id'], d.get('text', '')[:15])
+    db.commit()
 
 ### Commands
 
