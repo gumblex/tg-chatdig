@@ -16,9 +16,10 @@ class CalculatorError(Exception):
 class MathError(CalculatorError):
     '''The Math Error type.'''
 
-    def __init__(self, pos=0):
+    def __init__(self, pos=0, length=1):
         super().__init__(self)
         self.pos = pos
+        self.length = length
 
     def __repr__(self):
         return 'MathError(%s)' % self.pos
@@ -27,9 +28,10 @@ class MathError(CalculatorError):
 class SyntaxError(CalculatorError):
     '''The Syntax Error type.'''
 
-    def __init__(self, pos=0):
+    def __init__(self, pos=0, length=1):
         super().__init__(self)
         self.pos = pos
+        self.length = length
 
     def __repr__(self):
         return 'SyntaxError(%s)' % self.pos
@@ -38,9 +40,10 @@ class SyntaxError(CalculatorError):
 class KbdBreak(CalculatorError):
     '''The Keyboard Break Error type.'''
 
-    def __init__(self, pos=0):
+    def __init__(self, pos=0, length=1):
         super().__init__(self)
         self.pos = pos
+        self.length = length
 
     def __repr__(self):
         return 'KbdBreak(%s)' % self.pos
@@ -57,7 +60,8 @@ class Token:
         self.value = value
 
     def __repr__(self):
-        return 'Token(%s)' % ', '.join(map(repr, (self.name, self.pos, self.type, self.priority, self.argnum, self.value)))
+        return 'Token(%s)' % ', '.join(map(
+            repr, (self.name, self.pos, self.type, self.priority, self.argnum, self.value)))
 
 
 def adapt_cmath(funcname):
@@ -65,7 +69,11 @@ def adapt_cmath(funcname):
         if isinstance(x, complex):
             return getattr(cmath, funcname)(x)
         else:
-            return getattr(math, funcname)(x)
+            try:
+                return getattr(math, funcname)(x)
+            except Exception:
+                # sqrt etc.
+                return getattr(cmath, funcname)(x)
     return wrapped
 
 
@@ -108,15 +116,11 @@ def resplit(regex, string):
             yield string[pos:m.start(0)]
         yield string[m.start(0):m.end(0)]
         pos = m.end(0)
-    if pos < len(string) - 1:
+    if pos < len(string):
         yield string[pos:]
 
 
 class Calculator:
-
-    # type, priority, parameters
-    # type: 0:Whitespace, 1:Function, 2:Operator-ltr, 3:Operator-rtl
-    # 4:Delimiter, 5:BracketEnd
 
     operators = collections.OrderedDict((
         (" ", ('ws', 1, 1)),
@@ -130,7 +134,9 @@ class Calculator:
         # ("pos", ('op_r', 4, 1)),
         # ("neg", ('op_r', 4, 1)),
         ("*", ('op_l', 5, 2)),
+        ("×", ('op_l', 5, 2)),
         ("/", ('op_l', 5, 2)),
+        ("÷", ('op_l', 5, 2)),
         ("\\", ('op_l', 5, 2)),
         ("%", ('op_l', 5, 2)),
         ("+", ('op_l', 6, 2)),
@@ -150,7 +156,9 @@ class Calculator:
         "^": (operator.pow, 2),
         "**": (operator.pow, 2),
         "*": (operator.mul, 2),
+        "×": (operator.mul, 2),
         "/": (operator.truediv, 2),
+        "÷": (operator.truediv, 2),
         "\\": (operator.floordiv, 2),
         "%": (operator.mod, 2),
         "+": (operator.add, 2),
@@ -179,8 +187,11 @@ class Calculator:
         "imag": (operator.attrgetter("imag"), 1),
         "exp": (adapt_cmath("exp"), 1),
         "log": (adapt_cmath("log"), 1),
+        "ln": (adapt_cmath("log"), 1),
         "log10": (adapt_cmath("log10"), 1),
+        "lg": (adapt_cmath("log10"), 1),
         "sqrt": (adapt_cmath("sqrt"), 1),
+        "√": (adapt_cmath("sqrt"), 1),
         "acos": (adapt_cmath("acos"), 1),
         "asin": (adapt_cmath("asin"), 1),
         "atan": (adapt_cmath("atan"), 1),
@@ -207,7 +218,7 @@ class Calculator:
         "and": (operator.and_, 2),
         "or": (operator.or_, 2),
         "xor": (operator.xor, 2),
-        "random": (random.random, 0),
+        "rand": (random.random, 0),
         "randrng": (random.uniform, 2),
     }
 
@@ -219,9 +230,10 @@ class Calculator:
     re_split = re.compile(
         r'([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?i?|%s)' % ('|'.join(map(re.escape, operators.keys()))))
 
-    def __init__(self):
+    def __init__(self, ansvar=None, autoclose=False):
+        self.ansvar = ansvar or self.ansvar
         self.vars = {self.ansvar: 0}
-        self.autoclose = False
+        self.autoclose = autoclose
 
     def splitexpr(self, expr):
         pos = 0
@@ -249,7 +261,7 @@ class Calculator:
                 fn = self.functions[s]
                 yield Token(s, pos, 'fn', argnum=fn[1], value=fn[0])
             else:
-                raise SyntaxError(pos)
+                raise SyntaxError(pos, len(s))
             pos += len(s)
 
     def torpn(self, lstin):
@@ -259,7 +271,8 @@ class Calculator:
             if token.type == '(':
                 opstack.append(token)
             elif token.type.startswith('op'):
-                if token.name in '+-' and (lastt is None or lastt.type in ('(', 'op_l', 'op_r', ',')):
+                if token.name in '+-' and (
+                        lastt is None or lastt.type in ('(', 'op_l', 'op_r', ',')):
                     if token.name == '+':
                         token.name = 'pos'
                         token.value = operator.pos
@@ -285,13 +298,13 @@ class Calculator:
                     while opstack[-1].name != '(':
                         yield opstack.pop()
                 except IndexError:
-                    raise SyntaxError(key)
+                    raise SyntaxError(key, len(token.name))
             elif token.type == ')':
                 try:
                     while opstack[-1].name != '(':
                         yield opstack.pop()
                 except IndexError:
-                    raise SyntaxError(key)
+                    raise SyntaxError(key, len(token.name))
                 op = opstack.pop()
                 if opstack and opstack[-1].type == 'fn':
                     yield opstack.pop()
@@ -301,15 +314,17 @@ class Calculator:
                 opstack.append(token)
             else:
                 yield token
+            # check function brackets
+            if lastt and token.type != '(' and lastt.type == 'fn' and lastt.argnum:
+                raise SyntaxError(lastt.pos, len(lastt.name))
             lastt = token
         while opstack:
-            # Don't check if there is a parenthesis or a function.
-            # Ignored right parenthesis is allowed.
             op = opstack.pop()
             if op.type != '(':
                 yield op
+            # If self.autoclose then ignored right parenthesis is allowed.
             elif not self.autoclose:
-                raise SyntaxError(op.pos)
+                raise SyntaxError(op.pos, len(op.name))
 
     def evalrpn(self, lstin):
         '''Evaluates the Reverse Polish Expression.'''
@@ -323,18 +338,18 @@ class Calculator:
                 try:
                     args = [numstack.pop() for i in range(token.argnum)]
                 except IndexError:
-                    raise SyntaxError(token.pos)
+                    raise SyntaxError(token.pos, len(token.name))
                 try:
                     numstack.append(token.value(*reversed(args)))
                 except KeyboardInterrupt:
-                    raise KbdBreak(token.pos)
+                    raise KbdBreak(token.pos, len(token.name))
                 except Exception:
-                    raise MathError(token.pos)
+                    raise MathError(token.pos, len(token.name))
             else:
                 # Logic error in program
                 raise AssertionError('token %r appears in RPN' % token)
         if len(numstack) > 1:
-            raise SyntaxError(token.pos)
+            raise SyntaxError(token.pos, len(token.name))
         elif numstack:
             return numstack.pop()
         else:
@@ -345,18 +360,7 @@ class Calculator:
         self.vars[self.ansvar] = ret
         return ret
 
-    def pretty(self, expr, err=True):
-        try:
-            ret = self.eval(expr)
-        except MathError as ex:
-            if err:
-                return "Math Error:\n %s\n %s" % (expr, ' ' * ex.pos + '^')
-        except SyntaxError as ex:
-            if err:
-                return "Syntax Error:\n %s\n %s" % (expr, ' ' * ex.pos + '^')
-        except KbdBreak as ex:
-            if err:
-                return "Keyboard Break:\n %s\n %s" % (expr, ' ' * ex.pos + '^')
+    def format(self, ret):
         if ret is None:
             return ''
         elif isinstance(ret, complex):
@@ -377,6 +381,19 @@ class Calculator:
             return str(ret)
         else:
             return '0'
+
+    def pretty(self, expr):
+        try:
+            return self.format(self.eval(expr))
+        except MathError as ex:
+            return "Math Error:\n %s\n %s" % (
+                expr, ' ' * ex.pos + '^' * ex.length)
+        except SyntaxError as ex:
+            return "Syntax Error:\n %s\n %s" % (
+                expr, ' ' * ex.pos + '^' * ex.length)
+        except KbdBreak as ex:
+            return "Keyboard Break:\n %s\n %s" % (
+                expr, ' ' * ex.pos + '^' * ex.length)
 
 
 def main():

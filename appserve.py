@@ -209,7 +209,7 @@ saythr = threading.Thread(target=getsaying)
 saythr.daemon = True
 saythr.start()
 
-calculator = simpcalc.Calculator()
+calculator = simpcalc.Calculator('ans', True)
 namemodel = chinesename.NameModel('vendor/namemodel.m')
 simpleime.loaddict('vendor/pyindex.dawg', 'vendor/essay.dawg')
 fcgen = figchar.BlockGenerator('vendor/wqy.pkl', '🌝🌚')
