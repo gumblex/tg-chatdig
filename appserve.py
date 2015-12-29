@@ -6,6 +6,7 @@ import sys
 import json
 import queue
 import tempfile
+import resource
 import threading
 import traceback
 import subprocess
@@ -19,6 +20,15 @@ from vendor import simpcalc
 from vendor import simpleime
 from vendor import mosesproxy
 from vendor import chinesename
+
+resource.setrlimit(resource.RLIMIT_RSS, (131072, 262144))
+
+def setsplimits(cputime, memory):
+    def _setlimits():
+        resource.setrlimit(resource.RLIMIT_CPU, cputime)
+        resource.setrlimit(resource.RLIMIT_RSS, memory)
+        resource.setrlimit(resource.RLIMIT_NPROC, (1024, 1024))
+    return _setlimits
 
 # {"id": 1, "cmd": "bf", "args": [",[.,]", "asdasdf"]}
 
@@ -69,7 +79,7 @@ def cmd_calc(expr):
     return r or 'Nothing'
 
 def cmd_py(expr):
-    proc = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd='vendor')
+    proc = subprocess.Popen(EVIL_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd='vendor', preexec_fn=setsplimits((4, 5), (8192, 16384)))
     try:
         result, errs = proc.communicate(expr.strip().encode('utf-8'), timeout=5)
     except Exception: # TimeoutExpired
@@ -85,10 +95,10 @@ def cmd_bf(expr, datain=''):
     fd, fpath = tempfile.mkstemp()
     with os.fdopen(fd, 'wb') as temp_bf:
         temp_bf.write(''.join(c for c in expr if c in '-[>.<]+,').encode('latin_1'))
-    proc = subprocess.Popen(BF_CMD + (fpath,), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(BF_CMD + (fpath,), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=setsplimits((1, 1), (1024, 2048)))
     datain = datain.encode('utf-8')
     try:
-        result, errs = proc.communicate(datain, timeout=0.1)
+        result, errs = proc.communicate(datain, timeout=1)
     except Exception: # TimeoutExpired
         proc.kill()
         result, errs = proc.communicate()
@@ -104,7 +114,7 @@ def cmd_bf(expr, datain=''):
     return result or 'None or error occurred.'
 
 def cmd_lisp(expr):
-    proc = subprocess.Popen(LISP_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd='vendor')
+    proc = subprocess.Popen(LISP_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd='vendor', preexec_fn=setsplimits((4, 5), (8192, 16384)))
     try:
         result, errs = proc.communicate(expr.strip().encode('utf-8'), timeout=5)
     except Exception: # TimeoutExpired
@@ -196,7 +206,7 @@ SAY_LCK = threading.Lock()
 SAY_CMD = ('python3', 'say.py', 'chat.binlm', 'chatdict.txt', 'context.pkl')
 SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
 
-EVIL_CMD = ('python', 'seccomp.py')
+EVIL_CMD = ('mbox', '-n', '-i', '-p', 'mbox.conf', 'python3.5', 'repl.py')
 BF_CMD = ('vendor/brainfuck',)
 LISP_CMD = ('python', 'lispy.py')
 
