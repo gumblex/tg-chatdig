@@ -180,7 +180,7 @@ def getircupd():
         checkircconn()
         line = ircconn.parse(block=False)
         if line and line["cmd"] == "PRIVMSG":
-            if line["dest"] != CFG['ircnick'] and not re.match(CFG['ircbanre'], line["nick"]):
+            if line["dest"] != CFG['ircnick'] and not re.match(CFG['ircignorere'], line["nick"]):
                 msg = {
                     'message_id': IRCOFFSET,
                     'from': {'id': CFG['ircbotid'], 'first_name': CFG['ircbotname'], 'username': 'orzirc_bot'},
