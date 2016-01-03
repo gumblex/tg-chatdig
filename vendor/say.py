@@ -10,41 +10,54 @@ import struct
 import random
 import itertools
 import functools
+import collections
 
 srandom = random.SystemRandom()
 
 RE_UCJK = re.compile(
-    '([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U0001F000-\U0001F8AD\U00020000-\U0002A6D6]+)')
+    '([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff'
+    '\U0001F000-\U0001F8AD\U00020000-\U0002A6D6]+)')
 
 RE_EN = re.compile('[a-zA-Z0-9_]')
 
-punctstr = (
+punct = frozenset(
     '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~¢£¥·ˇˉ―‖‘’“”•′‵、。々'
     '〈〉《》「」『』【】〔〕〖〗〝〞︰︱︳︴︵︶︷︸︹︺︻︼︽︾︿﹀﹁﹂﹃﹄'
     '﹏﹐﹒﹔﹕﹖﹗﹙﹚﹛﹜﹝﹞！（），．：；？［｛｜｝～､￠￡￥')
 
-punct = frozenset(punctstr)
-
-def loaddict(fn):
-    dic = set('、，。；？！：')
-    with open(fn) as f:
-        for ln in f:
-            if not ln.strip():
-                continue
-            w = ln.split()[0]
-            #if RE_UCJK.match(w):
-            dic.add(w)
-    return sorted(dic)
+unpackvals = lambda b: struct.unpack('>' + 'H' * (len(b) // 2), b)
+sel_best = lambda weights: max(enumerate(weights), key=lambda x: x[1])
 
 
-#voc = '，；。！？' + ''.join(chr(x) for x in range(0x4e00, 0x9fa5))
+class LRUCache:
 
-#end = frozenset('。！？”')
+    def __init__(self, maxlen):
+        self.capacity = maxlen
+        self.cache = collections.OrderedDict()
 
+    def __getitem__(self, key):
+        value = self.cache.pop(key)
+        self.cache[key] = value
+        return value
 
-def cprint(s):
-    sys.stdout.buffer.write(s.encode('utf-8'))
-    sys.stdout.buffer.flush()
+    def get(self, key, default=None):
+        try:
+            value = self.cache.pop(key)
+            self.cache[key] = value
+            return value
+        except KeyError:
+            return default
+
+    def __setitem__(self, key, value):
+        try:
+            self.cache.pop(key)
+        except KeyError:
+            if len(self.cache) >= self.capacity:
+                self.cache.popitem(last=False)
+        self.cache[key] = value
+
+    def __contains__(self, item):
+        return item in self.cache
 
 
 def weighted_choice_king(weights):
@@ -59,16 +72,15 @@ def weighted_choice_king(weights):
     return winner, winweight
 
 
-def sel_best(weights):
-    return max(enumerate(weights), key=lambda x: x[1])
+def _get_indexword(model):
+    @functools.lru_cache(maxsize=50)
+    def indexword(word):
+        try:
+            return model.voc.index(word)
+        except ValueError:
+            return None
+    return indexword
 
-
-@functools.lru_cache(maxsize=50)
-def indexword(word):
-    try:
-        return voc.index(word)
-    except ValueError:
-        return None
 
 def joinword(words):
     last = False
@@ -80,56 +92,148 @@ def joinword(words):
             last = True
 
 
-def generate_word(lm, order, ctxvoc, cont=()):
-    out = []
-    stack = list(cont)
-    if stack:
-        history = ' '.join(stack) + ' '
+class SimpleModel:
+
+    def __init__(self, lm, dictfile, ctxmodel=None, dictinit=''):
+        self.lm = kenlm.LanguageModel(lm)
+        self.voc = []
+        self._vocid = LRUCache(64)
+        self.ctx = pickle.load(open(ctxmodel, 'rb')) if ctxmodel else {}
+        self.stopfn = lambda s: len(s) > 40 or len(s) > 3 and all(i == s[-1] for i in s[-3:])
+        self.loaddict(dictfile, dictinit, True)
+
+    def add_word(self, word):
+        if word not in self.dic:
+            self.dic.append(word)
+
+    def loaddict(self, fn, init='', withsp=False):
+        dic = set(init)
+        with open(fn) as f:
+            for ln in f:
+                ln = ln.strip()
+                if not ln:
+                    continue
+                dic.add(ln if withsp else ln.split()[0])
+        self.voc = sorted(dic)
+
+    def indexword(self, word):
+        if word not in self._vocid:
+            try:
+                self._vocid[word] = self.voc.index(word)
+            except ValueError:
+                self._vocid[word] = None
+        return self._vocid[word]
+
+    def say(self, context=(), continuewords=()):
+        context = context or continuewords
+        ctxvoc = list(frozenset(self.voc).intersection(map(self.voc.__getitem__, frozenset(itertools.chain.from_iterable(map(unpackvals, map(self.ctx.__getitem__, filter(None, map(self.indexword, frozenset(context)))))))))) or self.voc if context else self.voc
+        out = []
+        stack = list(continuewords)
+        if stack:
+            history = ' '.join(stack) + ' '
+            idx, w = weighted_choice_king(
+                10**self.lm.score(history + c, 1, 0) for c in ctxvoc)
+        else:
+            idx, w = weighted_choice_king(
+                10**self.lm.score(c, 1, 0) for c in ctxvoc)
+        out.append(ctxvoc[idx])
+        stack.append(ctxvoc[idx])
+        while 1:
+            bos = (len(stack) <= self.lm.order + 2)
+            history = ' '.join(stack[-self.lm.order - 2:]) + ' '
+            idx, w = weighted_choice_king(
+                10**self.lm.score(history + ctxvoc[k // 2], bos, k % 2) for k in range(len(ctxvoc) * 2))
+            c = ctxvoc[idx // 2]
+            out.append(c)
+            stack.append(c)
+            if idx % 2 or self.stopfn(out):
+                break
+        return pangu.spacing(''.join(joinword(out)))
+
+
+class POSModel:
+
+    allpos = (
+        'a', 'ad', 'ag', 'an', 'b', 'c', 'd', 'df', 'dg', 'e', 'f', 'g', 'h', 'i',
+        'j', 'k', 'l', 'm', 'mg', 'mq', 'n', 'ng', 'nr', 'ns', 'nt', 'nz', 'o',
+        'p', 'q', 'r', 'rg', 'rr', 'rz', 's', 't', 'tg', 'u', 'ud', 'ug', 'uj',
+        'ul', 'uv', 'uz', 'v', 'vd', 'vg', 'vi', 'vn', 'vq', 'x', 'y', 'z', 'zg',
+        '“', '”', '、', '。', '！', '，', '．', '：', '；', '？'
+    )
+
+    def __init__(self, lm, poslm, dictfile):
+        self.lm = kenlm.LanguageModel(lm)
+        self.poslm = kenlm.LanguageModel(poslm)
+        self.posvoc = {}
+        self.end = frozenset('。！？”')
+        self.loaddict(dictfile)
+
+    def loaddict(self, fn):
+        with open(fn) as f:
+            for ln in f:
+                l = ln.strip()
+                if not l:
+                    continue
+                try:
+                    w, f, p = l.split()
+                    p = p[:2]
+                    if RE_UCJK.match(w):
+                        if p in self.posvoc:
+                            self.posvoc[p].append(w)
+                        else:
+                            self.posvoc[p] = [w]
+                except Exception:
+                    pass
+
+    def generate_pos(self):
+        out = []
         idx, w = weighted_choice_king(
-            10**lm.score(history + c, 1, 0) for c in ctxvoc)
-    else:
-        idx, w = weighted_choice_king(10**lm.score(c, 1, 0) for c in ctxvoc)
-    # sys.stdout.buffer.write(ctxvoc[idx].encode('utf-8'))
-    out.append(ctxvoc[idx])
-    stack.append(ctxvoc[idx])
-    while 1:
-        bos = (len(stack) <= order + 2)
-        history = ' '.join(stack[-order - 2:]) + ' '
-        idx, w = weighted_choice_king(
-            10**lm.score(history + ctxvoc[k // 2], bos, k % 2) for k in range(len(ctxvoc) * 2))
-        c = ctxvoc[idx // 2]
-        # cprint(c)
-        out.append(c)
-        stack.append(c)
-        if idx % 2 or (len(out) > 3 and all(i == out[-1] for i in out[-3:])):
-            # cprint('\n')
-            break
-    return pangu.spacing(''.join(joinword(out)))
+            10**self.poslm.score(c, 1, 0) for c in self.allpos)
+        out.append(self.allpos[idx])
+        yield self.allpos[idx]
+        while 1:
+            bos = (len(out) <= self.poslm.order + 2)
+            history = ' '.join(out[-self.poslm.order - 2:]) + ' '
+            idx, w = weighted_choice_king(
+                10**self.poslm.score(history + self.allpos[k // 2], bos, k % 2) for k in range(len(self.allpos) * 2))
+            c = self.allpos[idx // 2]
+            out.append(c)
+            yield c
+            if idx % 2 or c in self.end:
+                break
 
-unpackvals = lambda b: struct.unpack('>' + 'H'*(len(b)//2), b)
+    def say(self):
+        orderlm = self.lm.order
+        out = []
+        for pos in self.generate_pos():
+            if pos in punct:
+                out.append(pos)
+            elif pos in self.posvoc:
+                bos = (len(out) <= orderlm + 2)
+                history = ' '.join(out[-orderlm - 2:]) + ' '
+                availvoc = self.posvoc[pos]
+                idx, w = weighted_choice_king(
+                    10**self.lm.score(history + c, bos, 0) for c in availvoc)
+                c = availvoc[idx]
+                out.append(c)
+            else:
+                out.append(pos)
+        return pangu.spacing(''.join(joinword(out)))
 
-LM = kenlm.LanguageModel(sys.argv[1])
-order = LM.order
-voc = loaddict(sys.argv[2])
-ctx = pickle.load(open(sys.argv[3], 'rb'))
 
-# Uglfied one-liner version
+if __name__ == '__main__':
+    model = SimpleModel(*sys.argv[1:])
+    for ln in sys.stdin:
+        ln = ln.strip()
+        if ln:
+            mode = ln[0]
+            words = ln[1:].split()
+        else:
+            mode, words = '', ()
+        print(model.say(words, words))
+        sys.stdout.flush()
 
-# ife = lambda x,a,b: a if x else b
-# print(generate_word(LM, order, ife(not ln, voc, (lambda a,b: b or a)(voc, list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(unpackvals, map(ctx.__getitem__, filter(None, map(indexword, frozenset(ln.split()))))))))))))))
-
-for ln in sys.stdin:
-    ln = ln.strip()
-    if ln:
-        mode = ln[0]
-        words = ln[1:].split()
-    else:
-        mode, words = '', []
-    ctxvoc = voc
-    cont = ()
-    if mode in 'rc':
-        ctxvoc = list(frozenset(voc).intersection(map(voc.__getitem__, frozenset(itertools.chain.from_iterable(map(unpackvals, map(ctx.__getitem__, filter(None, map(indexword, frozenset(words)))))))))) or voc
-    elif mode == 'c':
-        cont = words
-    print(generate_word(LM, order, ctxvoc, cont))
-    sys.stdout.flush()
+    #model = POSModel(*sys.argv[1:])
+    #while 1:
+        #print(model.say())
+        #sys.stdout.flush()

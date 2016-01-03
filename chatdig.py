@@ -1124,6 +1124,10 @@ def cmd_say(expr, chatid, replyid, msg):
     else:
         runapptask('say', (), (chatid, replyid))
 
+def cmd_mgw(expr, chatid, replyid, msg):
+    '''/mgw Say something like @moegirlwiki.'''
+    runapptask('mgw', (), (chatid, replyid))
+
 def cmd_reply(expr, chatid, replyid, msg):
     '''/reply [question] Reply to the conversation.'''
     if 'forward_from' in msg and msg['chat']['id'] < 0:
@@ -1339,6 +1343,7 @@ COMMANDS = collections.OrderedDict((
 ('quote', cmd_quote),
 ('wyw', cmd_wyw),
 ('cut', cmd_cut),
+('mgw', cmd_mgw),
 ('say', cmd_say),
 ('reply', cmd_reply),
 #('cont', cmd_cont),
@@ -1366,6 +1371,7 @@ PUBLIC = set((
 'cc',
 'wyw',
 'cut',
+'mgw',
 'say',
 'reply',
 #'cont',

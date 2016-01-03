@@ -177,6 +177,20 @@ def cmd_wyw(tinput, lang):
 def cmd_say():
     return SAY_Q.get() or 'ERROR_BRAIN_NOT_CONNECTED'
 
+def cmd_mgw():
+    global MGW_P
+    with MGW_LCK:
+        try:
+            MGW_P.stdin.write(b'b\n')
+            MGW_P.stdin.flush()
+            say = MGW_P.stdout.readline().strip().decode('utf-8')
+        except BrokenPipeError:
+            MGW_P = subprocess.Popen(MGW_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
+            MGW_P.stdin.write(b'b\n')
+            MGW_P.stdin.flush()
+            say = MGW_P.stdout.readline().strip().decode('utf-8')
+    return say
+
 def cmd_reply(expr):
     return getsayingbytext(expr, 'r') or 'ERROR_BRAIN_NOT_CONNECTED'
 
@@ -195,6 +209,7 @@ COMMANDS = collections.OrderedDict((
 ('wyw', cmd_wyw),
 ('cut', cmd_cut),
 ('say', cmd_say),
+('mgw', cmd_mgw),
 ('reply', cmd_reply),
 ('cont', cmd_cont)
 ))
@@ -202,9 +217,12 @@ COMMANDS = collections.OrderedDict((
 MSG_Q = queue.Queue()
 SAY_Q = queue.Queue(maxsize=50)
 SAY_LCK = threading.Lock()
+MGW_LCK = threading.Lock()
 
 SAY_CMD = ('python3', 'say.py', 'chat.binlm', 'chatdict.txt', 'context.pkl')
 SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
+MGW_CMD = ('python3', 'say.py', 'mgw.binlm', 'mgwdict.txt')
+MGW_P = subprocess.Popen(MGW_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
 
 EVIL_CMD = ('python', 'seccomp.py')
 BF_CMD = ('vendor/brainfuck',)
