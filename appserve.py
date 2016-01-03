@@ -206,7 +206,7 @@ SAY_LCK = threading.Lock()
 SAY_CMD = ('python3', 'say.py', 'chat.binlm', 'chatdict.txt', 'context.pkl')
 SAY_P = subprocess.Popen(SAY_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd='vendor')
 
-EVIL_CMD = ('mbox', '-n', '-i', '-p', 'mbox.conf', 'python3.5', 'repl.py')
+EVIL_CMD = ('python', 'seccomp.py')
 BF_CMD = ('vendor/brainfuck',)
 LISP_CMD = ('python', 'lispy.py')
 
