@@ -66,8 +66,8 @@ experiment/
 *.sh
 config.json
 cmdbot.json
-vendor/chat.binlm
-vendor/chat.lm
+vendor/*.binlm
+vendor/*.lm
 vendor/chatdict.txt
 vendor/chatlogf.txt
 vendor/*.pkl

@@ -1125,7 +1125,8 @@ def cmd_say(expr, chatid, replyid, msg):
         runapptask('say', (), (chatid, replyid))
 
 def cmd_mgw(expr, chatid, replyid, msg):
-    '''/mgw Say something like @moegirlwiki.'''
+    if chatid < 0:
+        return
     runapptask('mgw', (), (chatid, replyid))
 
 def cmd_reply(expr, chatid, replyid, msg):
@@ -1371,7 +1372,6 @@ PUBLIC = set((
 'cc',
 'wyw',
 'cut',
-'mgw',
 'say',
 'reply',
 #'cont',
