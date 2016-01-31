@@ -161,6 +161,8 @@ def cmd_cut(tinput, lang):
         return ' '.join(mosesproxy.cut(tinput, HMM=False))
 
 def cmd_wyw(tinput, lang):
+    if tinput == '$name':
+        return mosesproxy.modelname()
     if lang is None:
         cscore, mscore = zhutil.calctxtstat(tinput)
         if cscore == mscore:

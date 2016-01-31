@@ -43,6 +43,10 @@ def rawtranslate(text, mode, withcount=False):
     return loadsjson(receive(dumpsjson((mode + '.raw', text))))
 
 
+def modelname():
+    return loadsjson(receive(dumpsjson(('modelname',))))
+
+
 def cut(*args, **kwargs):
     return loadsjson(receive(dumpsjson(('cut', args, kwargs))))
 
@@ -117,6 +121,10 @@ if __name__ == '__main__':
             if not ping():
                 sys.exit(1)
             sys.stdout.write(translate(sys.stdin.read(), 'm2c.raw') + '\n')
+        elif sys.argv[1] == 'modelname':
+            if not ping():
+                sys.exit(1)
+            sys.stdout.write((modelname() or '') + '\n')
     else:
         if not ping():
             sys.exit(1)

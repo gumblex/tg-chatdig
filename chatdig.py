@@ -808,9 +808,15 @@ def db_getmsg(mid):
 
 @functools.lru_cache(maxsize=10)
 def db_getuidbyname(username):
-    uid = conn.execute('SELECT id FROM users WHERE username LIKE ?', (username,)).fetchone()
-    if uid:
-        return uid[0]
+    if username.startswith('#'):
+        try:
+            return int(username[1:])
+        except ValueError:
+            return None
+    else:
+        uid = conn.execute('SELECT id FROM users WHERE username LIKE ?', (username,)).fetchone()
+        if uid:
+            return uid[0]
 
 
 def logmsg(d, iorignore=False):

@@ -7,7 +7,7 @@ pv chatlog.txt | python3 ../truecaser.py truecase.txt | perl -p -e 's|^[^\n ]+] 
 rm chatlog.txt
 
 ~/software/moses/bin/lmplz -o 6 --prune 0 0 0 0 0 1 -S 50% --text chatlogf.txt --arpa chat.lm
-~/software/moses/bin/build_binary trie -q 8 -b 8 chat.lm chat.binlm
+~/software/moses/bin/build_binary trie chat.lm chat.binlm
 
 rm chat.lm
 pv chatlogf.txt | pypy3 learnctx.py chatdict.txt
