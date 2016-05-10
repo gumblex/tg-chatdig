@@ -576,11 +576,11 @@ def classify(msg):
 
     if 'title' in chat:
         # Group chat
-        if 'new_chat_participant' in msg:
-            return 3
         if chat['id'] == -CFG['groupid']:
             if msg['from']['id'] == CFG['botid']:
                 return 10
+            elif 'new_chat_participant' in msg:
+                return 3
             else:
                 return 1
         else:
@@ -1265,7 +1265,7 @@ def cmd__cmd(expr, chatid, replyid, msg):
         #sendmsg('ping', chatid, replyid)
 
 def cmd__welcome(expr, chatid, replyid, msg):
-    if chatid > 0:
+    if chatid != -CFG['groupid']:
         return
     usr = msg["new_chat_participant"]
     USER_CACHE[usr["id"]] = (usr.get("username"), usr.get("first_name"), usr.get("last_name"))

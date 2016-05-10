@@ -230,7 +230,7 @@ if __name__ == '__main__':
             words = ln[1:].split()
         else:
             mode, words = '', ()
-        print(model.say(words, words))
+        print(model.say(words))
         sys.stdout.flush()
 
     #model = POSModel(*sys.argv[1:])
