@@ -715,6 +715,8 @@ def servemedia(msg):
         if CFG.get('servemedia') == 'self':
             fname, code = cachemedia(msg)
             ret += ' %s%s' % (CFG['serveurl'], fname)
+        if msg['sticker'].get('emoji'):
+            ret = msg['sticker']['emoji'] + ' ' + ret
     elif 'document' in msg:
         ret += ' %s' % (msg['document'].get('file_name', ''))
         if CFG.get('servemedia') == 'self' and msg['document'].get('file_size', 0) <= CFG.get('servemaxsize', 1048576):
