@@ -60,7 +60,7 @@ conn.execute('CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY, val INT
 # conn.execute('CREATE TABLE IF NOT EXISTS words (word TEXT PRIMARY KEY, count INTEGER)')
 
 re_ircaction = re.compile('^\x01ACTION (.*)\x01$')
-re_ircforward = re.compile(r'^\[([^]]+)\] (.*)$|^\*\* ([^ ]+) (.*) \*\*$')
+re_ircforward = re.compile(r'^\[(.+?)\] (.*)$|^\*\* ([^ ]+) (.*) \*\*$')
 
 class LRUCache:
 
