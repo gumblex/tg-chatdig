@@ -2,6 +2,7 @@
 Dig into long and boring Telegram group chat logs.
 
 For a simpler Telegram-IRC relay bot, see [tg-irc-relay](https://github.com/gumblex/tg-irc-relay)
+**Deprecated**: The version 2 is renamed and published at [orizonhub](https://github.com/gumblex/orizonhub)
 
 ## chatdig.py
 
